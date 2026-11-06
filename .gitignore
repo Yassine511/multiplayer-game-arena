@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# local accounts (salted password hashes), created by the server on first start
+server/data/users.json

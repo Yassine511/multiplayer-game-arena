@@ -24,14 +24,14 @@ MAX_DATAGRAM = 1200          # bytes; below Tailscale's 1280 MTU, so never fragm
 MAX_LINE = 64 * 1024         # longest TCP line we accept before dropping the client
 
 # --- Rooms ---------------------------------------------------------------------
-MIN_PLAYERS = 3
+MIN_PLAYERS = max(1, _env_int("ARENA_MIN_PLAYERS", 3))   # set to 1 on the server to test alone
 MAX_PLAYERS = 10
 ROOM_CODE_DIGITS = 6
 
 # --- World ---------------------------------------------------------------------
 WORLD_W, WORLD_H = 1280, 720
 PLAYER_SPEED = 220.0         # px/s
-PLAYER_RADIUS = 14
+PLAYER_RADIUS = 7            # feet; the wall grid is pre-shrunk by about this much
 INTERACT_RADIUS = 60         # px from terminal centre to press E
 INTERACT_SLACK = 10          # extra px the server tolerates for latency
 

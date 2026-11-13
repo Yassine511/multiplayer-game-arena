@@ -105,6 +105,12 @@ def started_message(room):
     )
 
 
+# The round ends early when fewer than this many players are still connected
+# (normally 2: one player left alone has nobody to race). A solo test round
+# (ARENA_MIN_PLAYERS=1) only ends early if that player drops too.
+_LAST_STANDING = min(2, config.MIN_PLAYERS)
+
+
 # --- phases -----------------------------------------------------------------------
 def start_game(room, session):
     if session.player_id != room.host_id:
@@ -147,7 +153,7 @@ def start_game(room, session):
 def tick(room, now):
     """Advance timers. Called 20 times a second by the server tick loop."""
     if room.phase == P.PHASE_COUNTDOWN:
-        if len(room.connected_players()) < 2:
+        if len(room.connected_players()) < _LAST_STANDING:
             game_over(room, now)
         elif now >= room.countdown_end:
             room.phase = P.PHASE_PLAYING
@@ -167,7 +173,7 @@ def tick(room, now):
         if now >= room.next_sync:
             room.next_sync = now + config.TIME_SYNC_INTERVAL_S
             room.broadcast(P.msg(P.TIME_SYNC, remaining_ms=remaining_ms(room, now)))
-        if now >= room.end_time or len(room.connected_players()) < 2:
+        if now >= room.end_time or len(room.connected_players()) < _LAST_STANDING:
             game_over(room, now)
 
 

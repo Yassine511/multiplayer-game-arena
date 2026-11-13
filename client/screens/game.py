@@ -6,10 +6,9 @@ import pygame
 from common import config, map_data
 from common import protocol as P
 from client import ui
-from client.assets import color_of
+from client.assets import VIEW_ZOOM, color_of
 from client.screens.base import CANVAS_H, CANVAS_W, Screen
 
-SIDEBAR_X = config.WORLD_W
 POS_PERIOD = 1.0 / config.POS_HZ
 CORRECTION_PX = 60          # snap to the server's position if we drift further than this
 LETTERS = "ABCD"
@@ -37,6 +36,13 @@ class GameScreen(Screen):
         self.mx = self.my = 0.0
         self.mdir = "down"
         self.answer_rects = []
+        self.zoom = CANVAS_W / config.WORLD_W if self.spectator else VIEW_ZOOM
+        self.cam = None            # top-left of the view, world units
+        self._cam_px = (0, 0)      # the same, in screen px, rounded once per frame
+        self.moving = False
+        self.near = None
+        self.place = None          # room name the player stands in
+        self.place_flash = 0.0
         app.net.reset_snapshots()
         if state is not None:
             self.load_state(state)
@@ -97,7 +103,7 @@ class GameScreen(Screen):
         if e.type == pygame.KEYDOWN and e.key == pygame.K_e:
             t = self.nearest_terminal()
             if t is None:
-                self.toasts.add("Get closer to a terminal (within 60 px)", ui.MUTED, 1.5)
+                self.toasts.add("Get closer to a terminal", ui.MUTED, 1.5)
             else:
                 self.app.net.send(P.msg(P.OPEN_TERMINAL, terminal_id=t["terminal_id"]))
 
@@ -196,11 +202,44 @@ class GameScreen(Screen):
             if pid == self.me_id and self.is_me_playing():
                 p["x"], p["y"], p["dir"] = self.mx, self.my, self.mdir
             else:
+                p["moving"] = math.hypot(p["tx"] - p["x"], p["ty"] - p["y"]) > 1.5
                 p["x"] += (p["tx"] - p["x"]) * k
                 p["y"] += (p["ty"] - p["y"]) * k
 
+        self.moving = False
         if self.phase == P.PHASE_PLAYING and self.is_me_playing():
             self._move(dt)
+        self._update_camera(dt)
+        self.place_flash = max(0.0, self.place_flash - dt)
+        if self.is_me_playing():
+            room = map_data.room_at(self.mx, self.my)
+            place = room["name"] if room else "Corridor"
+            if place != self.place:
+                if self.place is not None and room:
+                    self.place_flash = 1.6
+                self.place = place
+
+    def _update_camera(self, dt):
+        vw, vh = CANVAS_W / self.zoom, CANVAS_H / self.zoom
+        if self.is_me_playing():
+            fx, fy = self.mx, self.my
+        elif self.spectator:
+            fx, fy = config.WORLD_W / 2, config.WORLD_H / 2
+        else:                                   # not spawned yet: look at the plaza
+            fx, fy = map_data.TERMINALS[0]["x"], map_data.TERMINALS[0]["y"]
+        tx = min(max(fx - vw / 2, 0), max(0, config.WORLD_W - vw))
+        ty = min(max(fy - vh / 2, 0), max(0, config.WORLD_H - vh))
+        if self.cam is None or math.hypot(tx - self.cam[0], ty - self.cam[1]) > 400:
+            self.cam = [tx, ty]
+        else:
+            k = min(1.0, dt * 9)
+            self.cam[0] += (tx - self.cam[0]) * k
+            self.cam[1] += (ty - self.cam[1]) * k
+
+    def to_screen(self, x, y):
+        # same rounding as the map blit, so sprites never shimmer against the floor
+        z = self.zoom
+        return round(x * z) - self._cam_px[0], round(y * z) - self._cam_px[1]
 
     def _apply_snapshot(self):
         snap = self.app.net.latest_snapshot
@@ -223,6 +262,7 @@ class GameScreen(Screen):
             vx = (keys[pygame.K_d] or keys[pygame.K_RIGHT]) - (keys[pygame.K_a] or keys[pygame.K_LEFT])
             vy = (keys[pygame.K_s] or keys[pygame.K_DOWN]) - (keys[pygame.K_w] or keys[pygame.K_UP])
             if vx or vy:
+                self.moving = True
                 norm = math.hypot(vx, vy)
                 step = config.PLAYER_SPEED * min(dt, 0.05)
                 self.mx, self.my = map_data.move(self.mx, self.my, vx / norm * step, vy / norm * step)
@@ -240,94 +280,250 @@ class GameScreen(Screen):
                 self.last_sent = cur
                 self.keepalive = 0.0
 
-    # --- drawing ------------------------------------------------------------------------
+    # --- drawing: world -----------------------------------------------------------------
+    sprite_scale = 3
+
     def draw(self, surf):
-        world = surf.subsurface(pygame.Rect(0, 0, config.WORLD_W, config.WORLD_H))
-        assets = self.app.assets
-        assets.draw_map(world)
-        near = self.nearest_terminal() if self.is_me_playing() and self.phase == P.PHASE_PLAYING else None
-        for t in self.terminals.values():
-            claimer = self.players.get(t.get("claimed_by"))
-            assets.draw_terminal(world, t, color_of(claimer["color"]) if claimer else None,
-                                 self.lockouts.get(t["terminal_id"], 0), highlight=(t is near))
-        order = sorted(self.players.items(), key=lambda kv: (kv[0] == self.me_id, kv[1]["y"]))
-        for pid, p in order:
-            assets.draw_player(world, p["x"], p["y"], p["color"], p["dir"], p["name"],
-                               me=(pid == self.me_id), connected=(p["status"] == P.STATUS_CONNECTED))
-        if near is not None and self.overlay is None:
-            ui.text(world, f"Press E to open T{near['terminal_id']}", (config.WORLD_W // 2, config.WORLD_H - 40),
-                    22, ui.TEXT, bold=True, anchor="center")
+        if self.cam is None:
+            self._update_camera(0)
+        self._cam_px = (round(self.cam[0] * self.zoom), round(self.cam[1] * self.zoom))
+        self._draw_world(surf)
+        self._draw_hud(surf)
         if self.phase == P.PHASE_COUNTDOWN:
-            shade = pygame.Surface((config.WORLD_W, config.WORLD_H), pygame.SRCALPHA)
-            shade.fill((0, 0, 0, 140))
-            world.blit(shade, (0, 0))
-            ui.text(world, "Get ready", (config.WORLD_W // 2, 250), 36, ui.MUTED, anchor="center")
-            ui.text(world, str(max(1, math.ceil(self.countdown_left))), (config.WORLD_W // 2, 340), 120,
-                    ui.WARN, bold=True, anchor="center")
+            self._draw_countdown(surf)
         if self.overlay is not None:
-            self._draw_question(world)
-        self._draw_sidebar(surf)
-        self.draw_toasts(surf, config.WORLD_W // 2, 20)
+            self._draw_question(surf)
+        self.draw_toasts(surf, CANVAS_W // 2, 84)
+
+    def _draw_world(self, surf):
+        assets = self.app.assets
+        z = self.zoom
+        world = assets.map_surface(z)
+        surf.blit(world, (0, 0), (self._cam_px[0], self._cam_px[1], CANVAS_W, CANVAS_H))
+        self.near = self.nearest_terminal() if self.is_me_playing() and self.phase == P.PHASE_PLAYING else None
+        for t in self.terminals.values():
+            sx, sy = self.to_screen(t["x"], t["y"])
+            if -80 < sx < CANVAS_W + 80 and -40 < sy < CANVAS_H + 120:
+                claimer = self.players.get(t.get("claimed_by"))
+                assets.draw_terminal(surf, sx, sy, t, color_of(claimer["color"]) if claimer else None,
+                                     self.lockouts.get(t["terminal_id"], 0), highlight=(t is self.near),
+                                     scale=z / 2 + 0.25)
+        order = sorted(self.players.items(), key=lambda kv: (kv[1]["y"], kv[0] == self.me_id))
+        for pid, p in order:
+            if p["status"] == P.STATUS_LEFT:
+                continue
+            sx, sy = self.to_screen(p["x"], p["y"])
+            if not (-80 < sx < CANVAS_W + 80 and -40 < sy < CANVAS_H + 120):
+                continue
+            me = pid == self.me_id
+            assets.draw_player(surf, sx, sy, p["color"], p["dir"], p["name"], me=me,
+                               connected=(p["status"] == P.STATUS_CONNECTED),
+                               moving=self.moving if me else p.get("moving", False), scale=self.sprite_scale)
+
+    # --- drawing: HUD -------------------------------------------------------------------
+    def _timer_plate(self, surf, cx=CANVAS_W // 2, y=10):
+        playing = self.phase == P.PHASE_PLAYING
+        secs = int(math.ceil(self.remaining)) if playing else config.GAME_DURATION_S
+        low = playing and secs <= 20
+        r = pygame.Rect(0, 0, 176, 62)
+        r.midtop = (cx, y)
+        blink = low and (pygame.time.get_ticks() // 400) % 2 == 0
+        ui.panel(surf, r, (60, 14, 34) if blink else ui.PANEL, 10, ui.BAD if low else ui.CYAN, 240)
+        ui.text(surf, "TIME LEFT", (r.centerx, r.y + 6), 12, ui.BAD if low else ui.MUTED, bold=True, anchor="midtop")
+        ui.text(surf, f"{secs // 60}:{secs % 60:02d}", (r.centerx, r.y + 25), 30,
+                ui.BAD if low else ui.ICE, bold=True, anchor="midtop")
+        return r
+
+    def _score_rows(self):
+        if self.scores:
+            return self.scores
+        if self.players:
+            return [{"id": pid, "name": p["name"], "score": 0, "connected": True, "color": p["color"]}
+                    for pid, p in self.players.items()]
+        room = self.app.room or {}              # countdown: the game state has not arrived yet
+        return [{"id": p["id"], "name": p["name"], "score": 0, "connected": p["status"] == P.STATUS_CONNECTED,
+                 "color": p["color"]} for p in room.get("players", [])]
+
+    def _draw_hud(self, surf):
+        self._timer_plate(surf)
+
+        # where am I
+        loc = pygame.Rect(12, 10, 286, 62)
+        flash = self.place_flash > 0
+        ui.panel(surf, loc, ui.PANEL_HI if flash and (pygame.time.get_ticks() // 160) % 2 else ui.PANEL, 10,
+                 ui.WARN if flash else ui.CYAN, 240)
+        ui.text(surf, "LOCATION", (loc.x + 18, loc.y + 9), 12, ui.MUTED, bold=True)
+        ui.text(surf, (self.place or "Station").upper(), (loc.x + 18, loc.y + 26), 20,
+                ui.WARN if flash else ui.ICE, bold=True)
+
+        # scoreboard
+        rows = self._score_rows()[:10]
+        sb = pygame.Rect(CANVAS_W - 12 - 250, 10, 250, 46 + len(rows) * 24)
+        ui.panel(surf, sb, ui.PANEL, 10, ui.CYAN, 232)
+        ui.heading(surf, "SCORES", (sb.x + 16, sb.y + 10), sb.w - 34, ui.CYAN, 12)
+        y = sb.y + 34
+        for i, s in enumerate(rows):
+            on = s.get("connected", True)
+            me = s["id"] == self.me_id
+            if me:
+                pygame.draw.rect(surf, ui.PANEL_HI, (sb.x + 10, y - 1, sb.w - 20, 22))
+            ui.text(surf, f"{i + 1}", (sb.x + 26, y + 10), 14, ui.WARN if i == 0 and s["score"] > 0 else ui.MUTED,
+                    bold=True, anchor="center")
+            ui.chip(surf, color_of(s.get("color")) if on else ui.GREY, (sb.x + 46, y + 10), 10)
+            ui.text(surf, ui.fit(s["name"], 14, 118, True), (sb.x + 60, y + 10), 14,
+                    (ui.ICE if me else ui.shade(ui.ICE, 0.8)) if on else ui.MUTED, bold=True, anchor="midleft")
+            ui.text(surf, str(s["score"]), (sb.right - 16, y + 10), 14, ui.ICE if on else ui.MUTED,
+                    bold=True, anchor="midright")
+            y += 24
+
+        self._draw_minimap(surf, pygame.Rect(12, CANVAS_H - 12 - 155, 260, 155))
+
+        # controls, room code, ping
+        room = self.app.room
+        rtt = self.app.net.rtt_ms
+        info = pygame.Rect(CANVAS_W - 12 - 384, CANVAS_H - 12 - 66, 384, 66)
+        ui.plate(surf, info, ui.PANEL, 215, 6)
+        x = info.x + 12
+        for key, what in (("WASD", "MOVE"), ("E", "USE"), ("1-4", "ANSWER")):
+            k = ui.keycap(surf, key, (x, info.y + 8), size=12)
+            t = ui.text(surf, what, (k.right + 6, k.centery), 12, ui.MUTED, bold=True, anchor="midleft")
+            x = t.right + 12
+        ping = f"PING {rtt:.0f} MS" if rtt is not None else "PING -"
+        ui.text(surf, f"ROOM {room['code']}" if room else "", (info.x + 14, info.y + 42), 12, ui.CYAN, bold=True)
+        ui.text(surf, ping, (info.right - 14, info.y + 42), 12,
+                ui.GOOD if rtt is not None and rtt < 120 else ui.WARN, bold=True, anchor="topright")
+
+        # interact prompt
+        if self.near is not None and self.overlay is None:
+            t = self.near
+            locked = self.lockouts.get(t["terminal_id"], 0)
+            if t["state"] == "cooldown":
+                msg, col = f"T{t['terminal_id']} IS RESETTING", ui.MUTED
+            elif locked > 0:
+                msg, col = f"T{t['terminal_id']} LOCKED FOR {math.ceil(locked)} S", ui.BAD
+            else:
+                msg, col = f"ACCESS TERMINAL T{t['terminal_id']}", ui.ICE
+            w = ui.text_width(msg, 18, True) + 70          # 16 + key 26 + 12 ... text ... 16
+            r = pygame.Rect(0, 0, w, 46)
+            r.midbottom = (CANVAS_W // 2, CANVAS_H - 26 + int(math.sin(pygame.time.get_ticks() / 220) * 2))
+            ui.panel(surf, r, ui.PANEL, 8, col if col != ui.ICE else ui.CYAN, 240, rivets=False)
+            k = ui.keycap(surf, "E", (r.x + 16, r.centery), "midleft")
+            ui.text(surf, msg, (k.right + 12, r.centery), 18, col, bold=True, anchor="midleft")
+
+    def _draw_minimap(self, surf, box, dots=5):
+        ui.panel(surf, box, ui.PANEL, 8, ui.CYAN, 240, rivets=False)
+        inner = box.inflate(-16, -16)
+        k = min(inner.w / config.WORLD_W, inner.h / config.WORLD_H)
+        mini = self.app.assets.map_surface(k)
+        ox, oy = inner.centerx - mini.get_width() // 2, inner.centery - mini.get_height() // 2
+        surf.blit(mini, (ox, oy))
+        blink = (pygame.time.get_ticks() // 300) % 2 == 0
+        for t in self.terminals.values():
+            x, y = int(ox + t["x"] * k), int(oy + t["y"] * k)
+            claimer = self.players.get(t.get("claimed_by"))
+            if t["state"] == "cooldown":
+                c = color_of(claimer["color"]) if claimer else ui.MUTED
+            elif self.lockouts.get(t["terminal_id"], 0) > 0:
+                c = ui.BAD
+            else:
+                c = ui.ICE if blink else ui.CYAN
+            pygame.draw.rect(surf, ui.INK, (x - 4, y - 4, 8, 8))
+            pygame.draw.rect(surf, c, (x - 2, y - 2, 4, 4))
+        for pid, p in self.players.items():
+            if p["status"] == P.STATUS_LEFT:
+                continue
+            x, y = int(ox + p["x"] * k), int(oy + p["y"] * k)
+            me = pid == self.me_id
+            d = dots + (2 if me else 0)
+            pygame.draw.rect(surf, ui.ICE if me and blink else ui.INK, (x - d // 2 - 1, y - d // 2 - 1, d + 2, d + 2))
+            pygame.draw.rect(surf, color_of(p["color"]) if p["status"] == P.STATUS_CONNECTED else ui.GREY,
+                             (x - d // 2, y - d // 2, d, d))
+        if not self.spectator:
+            view = pygame.Rect(ox + self.cam[0] * k, oy + self.cam[1] * k,
+                               CANVAS_W / self.zoom * k, CANVAS_H / self.zoom * k)
+            pygame.draw.rect(surf, ui.ICE, view, 1)
+
+    # --- drawing: overlays --------------------------------------------------------------
+    def _draw_countdown(self, surf):
+        ui.dim(surf, 120)
+        cx = CANVAS_W // 2
+        n = max(1, math.ceil(self.countdown_left))
+        frac = self.countdown_left - math.floor(self.countdown_left)
+        band = pygame.Rect(0, 236, CANVAS_W, 250)
+        pygame.draw.rect(surf, ui.INK, band)
+        ui.hazard(surf, (0, band.y, CANVAS_W, 12))
+        ui.hazard(surf, (0, band.bottom - 12, CANVAS_W, 12))
+        ui.text(surf, "GET READY", (cx, band.y + 30), 26, ui.CYAN, bold=True, anchor="midtop")
+        ui.text(surf, str(n), (cx, band.centery + int(frac * 6)), 120, ui.WARN, bold=True, anchor="center")
+        tip = ("WATCHING FROM THE CONTROL DECK" if self.spectator else
+               "10 TERMINALS, ONE IN EVERY ROOM  -  FIRST CORRECT ANSWER TAKES THE POINTS")
+        ui.text(surf, tip, (cx, band.bottom - 44), 14, ui.MUTED, bold=True, anchor="midtop")
 
     def _draw_question(self, surf):
         q = self.overlay
-        shade = pygame.Surface((config.WORLD_W, config.WORLD_H), pygame.SRCALPHA)
-        shade.fill((0, 0, 0, 150))
-        surf.blit(shade, (0, 0))
-        box = pygame.Rect(0, 0, 820, 470)
-        box.center = (config.WORLD_W // 2, config.WORLD_H // 2)
-        ui.panel(surf, box, (26, 31, 42), 14, ui.ACCENT)
-        ui.text(surf, f"Terminal T{q['terminal_id']}  -  {q.get('topic', '')}", (box.x + 30, box.y + 22), 20, ui.ACCENT)
-        y = box.y + 60
-        for line in ui.wrap(q["text"], 28, box.width - 60, bold=True):
-            ui.text(surf, line, (box.x + 30, y), 28, bold=True)
-            y += 36
-        y += 14
+        ui.dim(surf, 165)
+        box = pygame.Rect(120, 76, 1040, 568)
+        ui.panel(surf, box, ui.PANEL, 22, ui.CYAN, 250)
+        room = map_data.room_by_id(q["terminal_id"])
+
+        # title bar
+        ui.hazard(surf, (box.x + 26, box.y + 22, 40, 22))
+        ui.text(surf, f"TERMINAL T{q['terminal_id']}", (box.x + 78, box.y + 18), 24, ui.CYAN, bold=True)
+        topic = str(q.get("topic", "")).upper()
+        if topic:
+            tw = ui.text_width(topic, 14, True) + 24
+            tr = pygame.Rect(box.right - 28 - tw, box.y + 20, tw, 28)
+            pygame.draw.rect(surf, ui.INK, tr)
+            pygame.draw.rect(surf, ui.TEAL_DK, tr.inflate(-4, -4))
+            ui.text(surf, topic, (tr.centerx, tr.centery), 14, ui.ICE, bold=True, anchor="center")
+        ui.stitch(surf, box.x + 26, box.right - 26, box.y + 58, ui.TEAL_DK)
+
+        # left: which room this terminal is in
+        lx, lw = box.x + 28, 240
+        card_box = pygame.Rect(lx, box.y + 76, lw, 236)
+        ui.panel(surf, card_box, ui.FIELD, 10, ui.TEAL_DK, 255, rivets=False)
+        card = self.app.assets.room_card(room["slug"], lw - 28, 208) if room else None
+        if card is not None:
+            surf.blit(card, card.get_rect(center=card_box.center))
+        ui.text(surf, (room["name"] if room else "").upper(), (lx + lw // 2, card_box.bottom + 12), 16,
+                ui.ICE, bold=True, anchor="midtop")
+        y = card_box.bottom + 52
+        for label, value, col in (("FIRST CORRECT", f"+{config.POINTS_CORRECT}", ui.GOOD),
+                                  ("WRONG ANSWER", str(config.POINTS_WRONG), ui.BAD),
+                                  ("THEN LOCKED", f"{config.WRONG_LOCKOUT_S} S", ui.WARN)):
+            ui.text(surf, label, (lx + 4, y), 12, ui.MUTED, bold=True)
+            ui.text(surf, value, (lx + lw - 4, y), 12, col, bold=True, anchor="topright")
+            y += 24
+
+        # right: question and answers
+        rx = lx + lw + 30
+        rw = box.right - 30 - rx
+        y = box.y + 80
+        lines = ui.wrap(q["text"], 22, rw, bold=True)[:4]
+        for line in lines:
+            ui.text(surf, line, (rx, y), 22, ui.ICE, bold=True)
+            y += 32
+        y = max(y + 14, box.y + 164)
+        row_h = min(64, (box.bottom - 56 - y - 3 * 8) // 4)
         self.answer_rects = []
         for i, choice in enumerate(q["choices"]):
-            r = pygame.Rect(box.x + 30, y, box.width - 60, 54)
+            r = pygame.Rect(rx, y, rw, row_h)
             chosen = q.get("chosen") == i
             hover = r.collidepoint(self.app.mouse_pos) and not self.awaiting
-            ui.panel(surf, r, ui.PANEL_HI if hover or chosen else ui.PANEL, 8, ui.ACCENT if chosen else ui.BORDER)
-            ui.text(surf, f"{i + 1}", (r.x + 22, r.centery), 22, ui.ACCENT, bold=True, anchor="center")
-            ui.text(surf, choice, (r.x + 48, r.centery), 22, anchor="midleft")
+            ui.panel(surf, r, ui.PANEL_HI if hover or chosen else (24, 28, 76), 8,
+                     ui.WARN if chosen else ui.CYAN if hover else ui.TEAL_DK, 255, rivets=False)
+            ui.keycap(surf, str(i + 1), (r.x + 16, r.centery), "midleft")
+            parts = ui.wrap(choice, 20, rw - 84)[:2]
+            ty = r.centery - (len(parts) - 1) * 12
+            for part in parts:
+                ui.text(surf, part, (r.x + 58, ty), 20, ui.WARN if chosen else ui.ICE, anchor="midleft")
+                ty += 24
             self.answer_rects.append(r)
-            y += 62
-        hint = "Checking..." if self.awaiting else "Press 1-4 or click to answer  -  Esc to close"
-        ui.text(surf, hint, (box.centerx, box.bottom - 22), 18, ui.MUTED, anchor="center")
+            y += row_h + 8
+        if self.awaiting:
+            dots = "." * (1 + (pygame.time.get_ticks() // 250) % 3)
+            ui.text(surf, "CHECKING" + dots, (rx + rw // 2, box.bottom - 40), 14, ui.WARN, bold=True, anchor="midtop")
+        else:
+            ui.text(surf, "PRESS 1-4 OR CLICK TO ANSWER   -   ESC TO STEP AWAY", (rx + rw // 2, box.bottom - 40), 12,
+                    ui.MUTED, bold=True, anchor="midtop")
 
-    def _draw_sidebar(self, surf):
-        x0 = SIDEBAR_X
-        pygame.draw.rect(surf, (22, 26, 34), (x0, 0, CANVAS_W - x0, CANVAS_H))
-        pygame.draw.line(surf, ui.BORDER, (x0, 0), (x0, CANVAS_H))
-        cx = x0 + (CANVAS_W - x0) // 2
-        secs = int(math.ceil(self.remaining)) if self.phase == P.PHASE_PLAYING else config.GAME_DURATION_S
-        col = ui.BAD if self.phase == P.PHASE_PLAYING and secs <= 20 else ui.TEXT
-        ui.text(surf, "TIME LEFT", (cx, 18), 16, ui.MUTED, anchor="midtop")
-        ui.text(surf, f"{secs // 60}:{secs % 60:02d}", (cx, 38), 48, col, bold=True, anchor="midtop")
-        ui.text(surf, "SCOREBOARD", (x0 + 16, 112), 16, ui.MUTED)
-        y = 138
-        rows = self.scores or [{"id": pid, "name": p["name"], "score": 0, "connected": True, "color": p["color"]}
-                               for pid, p in self.players.items()]
-        for i, s in enumerate(rows[:10]):
-            on = s.get("connected", True)
-            pygame.draw.circle(surf, color_of(s.get("color")) if on else (90, 94, 104), (x0 + 24, y + 12), 7)
-            me = s["id"] == self.me_id
-            name = s["name"] if len(s["name"]) <= 11 else s["name"][:10] + "."
-            ui.text(surf, f"{i + 1}. {name}", (x0 + 38, y + 12), 19, ui.TEXT if on else ui.MUTED,
-                    bold=me, anchor="midleft")
-            ui.text(surf, str(s["score"]), (CANVAS_W - 16, y + 12), 20, ui.TEXT if on else ui.MUTED,
-                    bold=True, anchor="midright")
-            y += 30
-        self._draw_sidebar_footer(surf, x0, cx)
-
-    def _draw_sidebar_footer(self, surf, x0, cx):
-        room = self.app.room
-        y = CANVAS_H - 150
-        if room:
-            ui.text(surf, f"Room {room['code']}", (x0 + 16, y), 18, ui.MUTED)
-        rtt = self.app.net.rtt_ms
-        ui.text(surf, f"ping {rtt:.0f} ms" if rtt is not None else "ping -", (CANVAS_W - 16, y), 18,
-                ui.MUTED, anchor="topright")
-        for i, line in enumerate(["WASD / arrows: move", "E: open terminal", "1-4: answer, Esc: close"]):
-            ui.text(surf, line, (x0 + 16, y + 34 + i * 24), 17, ui.MUTED)

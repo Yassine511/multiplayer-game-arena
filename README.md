@@ -98,7 +98,8 @@ needs at least 3 players.
 ```
 common/protocol.py   message names, TCP line framing, UDP datagram helpers
 common/config.py     ports, game constants (env-overridable)
-common/map_data.py   walls, terminals T1-T10, spawns (shared by both sides)
+common/map_data.py   rooms, terminals T1-T10, spawns, collision (shared by both sides)
+common/map_grid.py   generated floor grid (tools/build_map.py)
 server/main.py       accept loop, dispatch, tick loop (20 Hz), heartbeats, resume
 server/connection.py per-client reader + writer threads and outbound queue
 server/auth.py       users.json (salted PBKDF2), sessions and tokens
@@ -108,28 +109,57 @@ server/udp.py        POS validation, SNAPSHOT broadcast
 server/data/questions.json   52 networking MCQs (answers never leave the server)
 client/main.py       app shell (--admin, --server)
 client/net.py        TCP + UDP background threads, ping, auto-reconnect + RESUME
-client/assets.py     art loader with shape fallbacks
+client/assets.py     map, backdrops, room cards, astronaut sprites, terminal beacons
+client/ui.py         pixel-station UI kit: palette, text, panels, buttons
+tools/               import_art.py, build_map.py
 client/screens/      login, lobby, room, game, spectator, results
 ```
 
-## Art (map and characters)
+## Art (map, rooms, characters)
 
-Drop PNG files into `client/assets/` and they are picked up automatically, no
-code change needed. Anything missing is drawn with simple shapes.
+The game is set on the Mediterranean University station: ten rooms joined by
+corridors, one terminal per room, everyone spawns on the central plaza.
 
-| File | Used for | Size it is scaled to |
-|---|---|---|
-| `map.png` | whole background | 1280 x 720 |
-| `player_<c>_<dir>.png` | player with colour index `c` (0-9) facing `dir` (`up`/`down`/`left`/`right`) | 40 x 40 |
-| `player_<c>.png` | player with colour `c`, any direction | 40 x 40 |
-| `player_<dir>.png` / `player.png` | same sprite for every player | 40 x 40 |
-| `terminal.png` | terminal ready to answer | 46 x 46 |
-| `terminal_cooldown.png` | terminal just claimed | 46 x 46 |
+| T | Room | T | Room |
+|---|---|---|---|
+| T1 | Central Plaza | T6 | Med Bay |
+| T2 | Electronics Lab | T7 | Science Lab |
+| T3 | Engine Room | T8 | Classroom |
+| T4 | Greenhouse | T9 | Auditorium |
+| T5 | Reactor Lab | T10 | Command Lounge |
 
-If you draw your own `map.png`, its walls must match the rectangles in
-`common/map_data.py` (the server uses those for collision); edit the
-coordinates there to match the art. Terminal and spawn positions live in the
-same file.
+Players see a camera that follows them (with a minimap); the admin sees the
+whole station.
+
+The artist's originals live in `Map_and_rooms/`. Two small tools turn them
+into what the game loads (they need `pip install pillow numpy scipy`; playing
+does not):
+
+```
+python tools/import_art.py     # Map_and_rooms/ -> client/assets/ (map, room cards, backdrops)
+python tools/build_map.py      # client/assets/map.png -> common/map_grid.py (the walls)
+```
+
+`build_map.py` reads the walls straight off the picture: the dark hull and
+open space are solid, rooms and corridors are floor, and the back walls and
+furniture listed at the top of the script are blocked. Server and client both
+import the resulting grid, so they always agree on collisions. Re-run both
+tools after the map art changes (`--debug DIR` writes pictures of the floor).
+Terminal, spawn and room positions are in `common/map_data.py`, written in
+map.png pixels.
+
+**Characters.** Until real sprites arrive, players are drawn in code as small
+astronauts in their colour. To replace them, drop PNGs with transparency into
+`client/assets/` (feet at the bottom centre, about 4:5):
+
+| File | Used for |
+|---|---|
+| `player_<c>_<dir>.png` | colour index `c` (0-9) facing `dir` (`up`/`down`/`left`/`right`) |
+| `player_<c>.png` | colour `c`, any direction |
+| `player_<dir>.png` / `player.png` | same sprite for every player |
+
+The look of every screen (palette, pixel text, panels, buttons) is in
+`client/ui.py`.
 
 ## Configuration
 
@@ -139,6 +169,7 @@ same file.
 | `--tcp-port`, `--udp-port` / `ARENA_TCP_PORT`, `ARENA_UDP_PORT` | 5000 / 5001 | ports |
 | `--public-host` (server) / `ARENA_PUBLIC_HOST` | auto | address written in the join string and QR |
 | `ARENA_GAME_SECONDS` | 180 | round length (handy for rehearsals) |
+| `ARENA_MIN_PLAYERS` | 3 | players needed to start; set to 1 on the server to test alone |
 | `ARENA_ADMIN_PASSWORD` | admin123 | admin password, used when users.json is first created |
 
 ## Demo script

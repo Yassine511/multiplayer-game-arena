@@ -1,23 +1,31 @@
+import math
+
 import pygame
 
 from common import config
 from common import protocol as P
 from client import ui
-from client.screens.base import CANVAS_W, Screen
+from client.screens.base import CANVAS_H, CANVAS_W, Screen
 
 
 class LoginScreen(Screen):
+    backdrop = "login"
+
     def __init__(self, app, notice=None):
         super().__init__(app)
         cx = CANVAS_W // 2
-        self.user = ui.TextInput((cx - 170, 270, 340, 48), "username", max_len=16)
-        self.pw = ui.TextInput((cx - 170, 330, 340, 48), "password", secret=True, max_len=64)
+        self.box = pygame.Rect(cx - 230, 268, 460, 348)
+        fx, fw = self.box.x + 36, self.box.w - 72
+        self.user = ui.TextInput((fx, self.box.y + 62, fw, 46), "your call sign", max_len=16, label="USERNAME")
+        self.pw = ui.TextInput((fx, self.box.y + 144, fw, 46), "secret", secret=True, max_len=64, label="PASSWORD")
         self.user.focused = True
         if app.admin_mode:
             self.user.value = config.ADMIN_USERNAME
             self.user.focused, self.pw.focused = False, True
-        self.btn_login = ui.Button((cx - 170, 400, 165, 48), "Log in", self.login)
-        self.btn_register = ui.Button((cx + 5, 400, 165, 48), "Register", self.register, color=(70, 90, 120))
+        half = (fw - 12) // 2
+        self.btn_login = ui.Button((fx, self.box.y + 212, half, 50), "LOG IN", self.login, size=18)
+        self.btn_register = ui.Button((fx + half + 12, self.box.y + 212, half, 50), "REGISTER", self.register,
+                                      color=ui.BTN_QUIET, size=18)
         self.status = notice
         self.status_color = ui.WARN if notice else ui.MUTED
         self._auto_login = False
@@ -77,19 +85,45 @@ class LoginScreen(Screen):
 
     def draw(self, surf):
         cx = CANVAS_W // 2
-        ui.text(surf, "Multiplayer Game Arena", (cx, 120), 52, ui.TEXT, bold=True, anchor="center")
-        ui.text(surf, "Race to the terminals. Answer networking questions. Be first.",
-                (cx, 172), 22, ui.MUTED, anchor="center")
-        if self.app.admin_mode:
-            ui.text(surf, "ADMIN CLIENT", (cx, 215), 20, ui.WARN, bold=True, anchor="center")
+        t = pygame.time.get_ticks() / 1000
+
+        # title, floating
+        ty = 70 + int(math.sin(t * 1.3) * 4)
+        ui.text(surf, "GAME ARENA", (cx + 5, ty + 6), 84, ui.INK, bold=True, anchor="midtop", shadow=False)
+        ui.text(surf, "GAME ARENA", (cx, ty), 84, ui.ICE, bold=True, anchor="midtop")
+        sub = "MEDITERRANEAN UNIVERSITY STATION"
+        w = ui.text_width(sub, 16, True) + 40
+        tag = pygame.Rect(0, 0, w, 34)
+        tag.midtop = (cx, 186)
+        ui.plate(surf, tag, ui.INK, 190, 4)
+        ui.text(surf, sub, (tag.centerx, tag.centery), 16, ui.CYAN, bold=True, anchor="center")
+        ui.text(surf, "Race to the terminals. Answer networking questions. Be first.", (cx, 228), 20,
+                ui.ICE, anchor="midtop")
+
+        ui.panel(surf, self.box, ui.PANEL, 18, ui.CYAN, 238)
+        admin = self.app.admin_mode
+        ui.heading(surf, "ADMIN ACCESS" if admin else "CREW LOGIN", (self.box.x + 36, self.box.y + 16),
+                   self.box.w - 72, ui.WARN if admin else ui.CYAN, 14)
         for w in (self.user, self.pw):
             w.draw(surf)
         self.btn_login.draw(surf)
         self.btn_register.draw(surf)
         if self.status:
-            ui.text(surf, self.status, (cx, 480), 20, self.status_color, anchor="center")
+            for i, line in enumerate(ui.wrap(self.status, 14, self.box.w - 60, True)[:2]):
+                ui.text(surf, line, (cx, self.box.y + 282 + i * 20), 14, self.status_color, bold=True, anchor="midtop")
+        else:
+            ui.text(surf, "TAB switches field  -  ENTER logs in", (cx, self.box.y + 290), 12, ui.MUTED,
+                    bold=True, anchor="midtop")
+
+        # server link
         net = self.app.net
-        state = ("connected" if self.app.connected else "connecting...")
-        ui.text(surf, f"Server {net.host}:{net.tcp_port}  -  {state}", (cx, 680), 18,
-                ui.GOOD if self.app.connected else ui.WARN, anchor="center")
+        ok = self.app.connected
+        label = f"SERVER {net.host}:{net.tcp_port}   {'ONLINE' if ok else 'CONNECTING...'}"
+        w = ui.text_width(label, 12, True) + 52
+        bar = pygame.Rect(0, 0, w, 32)
+        bar.midbottom = (cx, CANVAS_H - 18)
+        ui.plate(surf, bar, ui.INK, 200, 4)
+        lamp = ui.GOOD if ok else ui.WARN if int(t * 3) % 2 else ui.shade(ui.WARN, 0.5)
+        pygame.draw.rect(surf, lamp, (bar.x + 16, bar.centery - 5, 10, 10))
+        ui.text(surf, label, (bar.x + 36, bar.centery), 12, ui.ICE if ok else ui.WARN, bold=True, anchor="midleft")
         self.draw_toasts(surf)

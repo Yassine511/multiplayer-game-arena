@@ -9,6 +9,25 @@ import argparse
 import os
 import sys
 
+
+def _dpi_aware():
+    """Stop Windows from bitmap-stretching the window on 125 % / 150 % displays, which
+    blurs every pixel. The game scales itself, crisply, instead."""
+    os.environ.setdefault("SDL_WINDOWS_DPI_AWARENESS", "permonitorv2")
+    if sys.platform != "win32":
+        return
+    import ctypes
+    try:
+        ctypes.windll.shcore.SetProcessDpiAwareness(2)
+    except Exception:
+        try:
+            ctypes.windll.user32.SetProcessDPIAware()
+        except Exception:
+            pass
+
+
+_dpi_aware()
+
 os.environ.setdefault("PYGAME_HIDE_SUPPORT_PROMPT", "1")
 import pygame  # noqa: E402
 
@@ -20,16 +39,27 @@ from client.net import NetClient  # noqa: E402
 from client.screens.base import CANVAS_H, CANVAS_W  # noqa: E402
 
 
+FADE_S = 0.28
+FPS_CAP = 240
+# per-backdrop options: where stars may twinkle, and a tint that keeps panels readable
+BACKDROPS = {
+    "login": {"stars": 26, "star_band": 0.45, "rocks": 14, "rock_band": (0.24, 0.47)},
+    "space": {"stars": 40, "star_band": 1.0, "tint": (10, 6, 40, 70)},
+    "scene": {"stars": 0, "tint": (6, 8, 36, 60)},
+}
+
+
 class App:
     def __init__(self, args):
         pygame.init()
-        pygame.display.set_caption("Multiplayer Game Arena" + (" - Admin" if args.admin else ""))
-        info = pygame.display.Info()
-        scale = min(1.0, info.current_w * 0.95 / CANVAS_W, info.current_h * 0.85 / CANVAS_H)
-        self.window = pygame.display.set_mode((int(CANVAS_W * scale), int(CANVAS_H * scale)), pygame.RESIZABLE)
-        self.canvas = pygame.Surface((CANVAS_W, CANVAS_H))
+        pygame.display.set_caption("Game Arena - Mediterranean University Station" + (" - Admin" if args.admin else ""))
+        self.window, self.vsync, scaled = self._open_window()
+        # SCALED: draw straight to the display and let the GPU scale it to the window
+        self.canvas = self.window if scaled else pygame.Surface((CANVAS_W, CANVAS_H)).convert()
         self.clock = pygame.time.Clock()
-        self.assets = Assets()
+        self.assets = Assets((CANVAS_W, CANVAS_H))
+        pygame.display.set_icon(self.assets.player_sprite(5, "down", 0, 2))
+        self.fade = 0.0             # seconds left of the fade-in after a screen change
         self.admin_mode = args.admin
         self.me = None              # LOGIN_OK fields
         self.room = None            # latest ROOM_UPDATE
@@ -41,12 +71,15 @@ class App:
         self.net.start()
         from client.screens.login import LoginScreen
         self.screen = LoginScreen(self)
+        self.fade = FADE_S
 
     @property
     def is_admin(self):
         return bool(self.me and self.me.get("role") == "admin")
 
     def set_screen(self, screen):
+        if type(screen) is not type(self.screen):
+            self.fade = FADE_S
         self.screen = screen
 
     def make_game_screen(self, state=None, countdown=None):
@@ -58,6 +91,23 @@ class App:
     def on_login(self, m):
         self.me = dict(m)
         self.net.start_udp(m["token"], m["udp_port"])
+
+    # --- window ---------------------------------------------------------------------------
+    @staticmethod
+    def _open_window():
+        """A 1280x720 logical canvas that SDL scales on the GPU to any window size.
+
+        With SCALED the display surface *is* the canvas: no per-frame CPU rescale, mouse
+        positions arrive in canvas coordinates, and vsync gives even frame pacing.
+        """
+        os.environ["SDL_RENDER_SCALE_QUALITY"] = "0"     # nearest neighbour: hard pixel edges
+        flags = pygame.SCALED | pygame.RESIZABLE
+        for vsync in (1, 0):
+            try:
+                return pygame.display.set_mode((CANVAS_W, CANVAS_H), flags, vsync=vsync), bool(vsync), True
+            except pygame.error:
+                continue
+        return pygame.display.set_mode((CANVAS_W, CANVAS_H), pygame.RESIZABLE), False, False
 
     # --- scaling between the window and the fixed-size canvas ---------------------------
     def _transform(self):
@@ -123,11 +173,16 @@ class App:
     # --- main loop -----------------------------------------------------------------------
     def frame(self):
         """One iteration of the main loop: input, network, update, draw."""
-        dt = self.clock.tick(60) / 1000.0
+        # vsync paces the loop; the cap only guards drivers that ignore it
+        dt = self.clock.tick(FPS_CAP if self.vsync else 60) / 1000.0
         for e in pygame.event.get():
             if e.type == pygame.QUIT:
                 self.running = False
                 return
+            if e.type == pygame.KEYDOWN and (e.key == pygame.K_F11 or
+                                             (e.key == pygame.K_RETURN and e.mod & pygame.KMOD_ALT)):
+                pygame.display.toggle_fullscreen()
+                continue
             e = self._map_event(e)
             if e.type == pygame.MOUSEMOTION:
                 self.mouse_pos = e.pos
@@ -138,17 +193,26 @@ class App:
                 break
             self.dispatch(m)
         self.screen.update(dt)
-        self.canvas.fill(ui.BG)
+        if self.screen.backdrop:
+            self.assets.backdrop(self.screen.backdrop, **BACKDROPS.get(self.screen.backdrop, {})).draw(self.canvas)
+        else:
+            self.canvas.fill(ui.BG)
         self.screen.draw(self.canvas)
+        if self.fade > 0:
+            self.fade = max(0.0, self.fade - dt)
+            ui.dim(self.canvas, int(255 * self.fade / FADE_S) // 16 * 16, ui.INK)
         if self.banner:
-            r = pygame.Rect(0, 0, CANVAS_W, 40)
-            pygame.draw.rect(self.canvas, (120, 40, 40), r)
-            ui.text(self.canvas, self.banner, r.center, 22, ui.TEXT, bold=True, anchor="center")
-        s, ox, oy = self._transform()
-        self.window.fill((0, 0, 0))
-        size = (int(CANVAS_W * s), int(CANVAS_H * s))
-        frame = self.canvas if size == (CANVAS_W, CANVAS_H) else pygame.transform.smoothscale(self.canvas, size)
-        self.window.blit(frame, (int(ox), int(oy)))
+            r = pygame.Rect(0, 0, CANVAS_W, 44)
+            pygame.draw.rect(self.canvas, ui.INK, r)
+            ui.hazard(self.canvas, (0, 0, CANVAS_W, 8), ui.BAD)
+            ui.hazard(self.canvas, (0, 36, CANVAS_W, 8), ui.BAD)
+            ui.text(self.canvas, self.banner.upper(), (r.centerx, r.centery), 16, ui.ICE, bold=True, anchor="center")
+        if self.canvas is not self.window:              # fallback window without SCALED
+            s, ox, oy = self._transform()
+            self.window.fill((0, 0, 0))
+            size = (int(CANVAS_W * s), int(CANVAS_H * s))
+            frame = self.canvas if size == (CANVAS_W, CANVAS_H) else pygame.transform.smoothscale(self.canvas, size)
+            self.window.blit(frame, (int(ox), int(oy)))
         pygame.display.flip()
 
     def run(self):

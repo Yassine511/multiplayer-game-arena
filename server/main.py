@@ -9,6 +9,7 @@ import argparse
 import logging
 import os
 import socket
+import sys
 import threading
 import time
 
@@ -21,6 +22,16 @@ from server.rooms import RoomRegistry
 from server.udp import UdpService
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
+
+
+def users_path():
+    """users.json lives in server/data/ when run from source; next to the executable when
+    frozen (PyInstaller unpacks the bundle to a temp folder that is wiped on exit)."""
+    if os.environ.get("ARENA_USERS_FILE"):
+        return os.environ["ARENA_USERS_FILE"]
+    if getattr(sys, "frozen", False):
+        return os.path.join(os.path.dirname(os.path.abspath(sys.executable)), "arena_data", "users.json")
+    return os.path.join(DATA_DIR, "users.json")
 
 
 def detect_addresses():
@@ -50,11 +61,9 @@ class Server:
         self.log = logging.getLogger("arena.server")
         self.lock = threading.RLock()          # server_lock: users, sessions, room registry
         self.running = True
-        self.users = UserStore(os.environ.get("ARENA_USERS_FILE") or os.path.join(DATA_DIR, "users.json"))
-        if self.users.ensure_admin(config.ADMIN_USERNAME, config.ADMIN_PASSWORD):
-            self.log.info("created admin account '%s'", config.ADMIN_USERNAME)
+        self.users = UserStore(users_path())
         n = game.load_questions(game.default_bank_path())
-        self.log.info("loaded %d questions", n)
+        self.log.info("built-in question set: %d questions (hosts pick or write their own)", n)
         self.sessions = SessionTable()
         self.rooms = RoomRegistry(self)
         self.conns = set()
@@ -187,11 +196,13 @@ class Server:
             return self.rooms.spectate_room(s, m.get("code"))
         if t == P.SET_CHARACTER:
             return self.rooms.set_character(s, m.get("character"))
+        if t == P.SET_QUESTIONS:
+            return self.rooms.set_questions(s, m)
         if t == P.LEAVE_ROOM:
             if s.room is None:
                 s.send(P.error(P.E_NOT_IN_ROOM, "You are not in a room"))
             return self.rooms.leave_room(s)
-        if t in (P.START_GAME, P.OPEN_TERMINAL, P.ANSWER):
+        if t in (P.START_GAME, P.OPEN_TERMINAL, P.ANSWER, P.USE_ULTIMATE):
             return self._on_game_msg(s, m)
         conn.send(P.error(P.E_BAD_REQUEST, f"Unknown message type {t}"))
 
@@ -207,7 +218,10 @@ class Server:
                 return
             p = room.players.get(s.player_id)
             if p is None or not p.connected:
-                s.send(P.error(P.E_FORBIDDEN, "Spectators cannot answer"))
+                s.send(P.error(P.E_FORBIDDEN, "Spectators cannot play"))
+                return
+            if m["type"] == P.USE_ULTIMATE:
+                game.use_ultimate(room, p, now)
                 return
             try:
                 tid = int(m.get("terminal_id"))
@@ -291,6 +305,8 @@ class Server:
                              role=s.role, udp_port=self.udp_port, room=room.roster(),
                              game=game.started_message(room) if in_game else None,
                              spectator=spectator))
+                if s.player_id == room.host_id:
+                    s.send(room.questions_message())
                 p = room.players.get(s.player_id)
                 if p is not None and in_game and p.status == P.STATUS_DISCONNECTED:
                     game.on_player_back(room, p)

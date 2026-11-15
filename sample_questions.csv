@@ -1,0 +1,7 @@
+question,choice A,choice B,choice C,choice D,answer,topic
+Which transport protocol does a real-time game usually send positions over?,TCP,UDP,ICMP,ARP,B,Transport
+What does the TCP three-way handshake start with?,ACK,FIN,SYN,RST,C,TCP
+How many bits are in an IPv4 address?,16,32,64,128,2,IP
+Which port does HTTPS use by default?,80,21,443,8080,443,Ports
+"Which pair is connectionless, then connection-oriented?","TCP, then UDP","UDP, then TCP","IP, then UDP","TCP, then IP",2,Transport
+What maps an IPv4 address to a MAC address?,DNS,DHCP,ARP,NAT,ARP,Link

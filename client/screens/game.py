@@ -1,4 +1,4 @@
-"""In-game screen for players (and, via SpectatorScreen, the admin)."""
+"""In-game screen for players (and, via SpectatorScreen, the host and other watchers)."""
 import math
 
 import pygame
@@ -7,6 +7,7 @@ from common import config, map_data
 from common import protocol as P
 from client import ui
 from client.assets import CHAR_H_PER_SCALE, VIEW_ZOOM, color_of
+from client.cutscenes import CutscenePlayer
 from client.screens.base import CANVAS_H, CANVAS_W, Screen
 
 POS_PERIOD = 1.0 / config.POS_HZ
@@ -43,6 +44,11 @@ class GameScreen(Screen):
         self.near = None
         self.place = None          # room name the player stands in
         self.place_flash = 0.0
+        self.streak = 0
+        self.ult_streak = config.ULT_STREAK
+        self.ult_ready = False
+        self.ult_rect = pygame.Rect(0, 0, 0, 0)
+        self.cutscenes = CutscenePlayer(app)
         app.net.reset_snapshots()
         if state is not None:
             self.load_state(state)
@@ -76,6 +82,11 @@ class GameScreen(Screen):
         me = self.players.get(self.me_id)
         if me:
             self.mx, self.my, self.mdir = me["x"], me["y"], me["dir"]
+        for p in st.get("players", []):
+            if p["id"] == self.me_id:
+                self.streak = p.get("streak", 0)
+                self.ult_ready = bool(p.get("ult_ready"))
+        self.ult_streak = st.get("ult_streak", self.ult_streak)
         self.scores = st.get("scores", [])
 
     def is_me_playing(self):
@@ -94,8 +105,21 @@ class GameScreen(Screen):
                 best, best_d = t, d
         return best
 
+    def solved_by_me(self, t):
+        return self.me_id in (t.get("solvers") or [])
+
+    def use_ultimate(self):
+        if self.ult_ready:
+            self.app.net.send(P.msg(P.USE_ULTIMATE))
+
     def handle_event(self, e):
         if self.phase != P.PHASE_PLAYING or not self.is_me_playing():
+            return
+        if e.type == pygame.KEYDOWN and e.key == pygame.K_SPACE and self.ult_ready:
+            self.use_ultimate()
+            return
+        if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1 and self.ult_ready and self.ult_rect.collidepoint(e.pos):
+            self.use_ultimate()
             return
         if self.overlay is not None:
             if e.type == pygame.KEYDOWN:
@@ -114,6 +138,10 @@ class GameScreen(Screen):
             t = self.nearest_terminal()
             if t is None:
                 self.toasts.add("Get closer to a terminal", ui.MUTED, 1.5)
+            elif t["state"] == P.TERMINAL_DISABLED:
+                self.toasts.add(f"T{t['terminal_id']} is offline - it was cracked {t.get('max_uses', 3)} times", ui.MUTED, 2)
+            elif self.solved_by_me(t):
+                self.toasts.add(f"You already cracked T{t['terminal_id']} - move to another room", ui.WARN, 2)
             else:
                 self.app.net.send(P.msg(P.OPEN_TERMINAL, terminal_id=t["terminal_id"]))
 
@@ -143,11 +171,15 @@ class GameScreen(Screen):
             self.awaiting = False
             self.overlay = None
             st = m["status"]
+            self.streak = m.get("streak", self.streak)
+            self.ult_ready = m.get("ult_ready", self.ult_ready)
             if st == P.RESULT_CORRECT:
-                self.toasts.add(f"Correct! +{m['points']}", ui.GOOD)
+                left = self.ult_streak - self.streak
+                extra = f"  -  streak {self.streak}" + (f", {left} more for your ultimate" if 0 < left and not self.ult_ready else "")
+                self.toasts.add(f"Correct! +{m['points']}{extra}", ui.GOOD)
             elif st == P.RESULT_WRONG:
                 self.lockouts[m["terminal_id"]] = m.get("lockout_ms", 5000) / 1000
-                self.toasts.add(f"Wrong answer {m['points']}  -  T{m['terminal_id']} locked 5 s", ui.BAD)
+                self.toasts.add(f"Wrong answer {m['points']}  -  T{m['terminal_id']} locked 5 s  -  streak lost", ui.BAD)
             elif st == P.RESULT_TOO_LATE:
                 self.toasts.add("Too late - someone answered first", ui.WARN)
             elif st == P.RESULT_LOCKED:
@@ -159,6 +191,15 @@ class GameScreen(Screen):
                 if self.overlay and self.overlay["terminal_id"] == tid and not self.awaiting:
                     self.overlay = None
                     self.toasts.add(f"{self.name_of(m['claimed_by'])} answered T{tid} first", ui.WARN)
+        elif t == P.ULTIMATE_READY:
+            self.ult_ready = True
+            self.app.sfx.play("alarm", 0.6)
+            self.toasts.add(f"{self.ult_streak} IN A ROW!  ULTIMATE READY - PRESS SPACE", ui.WARN, 4)
+        elif t == P.ULTIMATE:
+            if m.get("player_id") == self.me_id:
+                self.ult_ready = False
+                self.streak = 0
+            self.cutscenes.add(m, self.me_id, self.players, self.toasts)
         elif t == P.SCORE_UPDATE:
             self.scores = m["scores"]
             for s in self.scores:
@@ -182,7 +223,10 @@ class GameScreen(Screen):
             from client.screens.results import ResultsScreen
             self.app.set_screen(ResultsScreen(self.app, m))
         elif t == P.ERROR:
-            if m.get("code") in (P.E_LOCKED_OUT, P.E_COOLDOWN) and m.get("remaining_ms") is not None:
+            if m.get("code") == P.E_NO_ULTIMATE:
+                self.ult_ready = False
+                super().handle_msg(m)
+            elif m.get("code") in (P.E_LOCKED_OUT, P.E_COOLDOWN) and m.get("remaining_ms") is not None:
                 if m["code"] == P.E_LOCKED_OUT:
                     self.lockouts[m["terminal_id"]] = m["remaining_ms"] / 1000
                 self.toasts.add(f"{m['message']} ({m['remaining_ms'] / 1000:.1f} s)", ui.WARN)
@@ -193,6 +237,7 @@ class GameScreen(Screen):
     # --- update -------------------------------------------------------------------------
     def update(self, dt):
         super().update(dt)
+        self.cutscenes.update(dt)
         if self.phase == P.PHASE_COUNTDOWN:
             self.countdown_left = max(0.0, self.countdown_left - dt)
         elif self.phase == P.PHASE_PLAYING:
@@ -275,8 +320,8 @@ class GameScreen(Screen):
     def _move(self, dt):
         if self.overlay is None:
             keys = pygame.key.get_pressed()
-            vx = (keys[pygame.K_d] or keys[pygame.K_RIGHT]) - (keys[pygame.K_a] or keys[pygame.K_LEFT])
-            vy = (keys[pygame.K_s] or keys[pygame.K_DOWN]) - (keys[pygame.K_w] or keys[pygame.K_UP])
+            vx = keys[pygame.K_RIGHT] - keys[pygame.K_LEFT]          # arrow keys only
+            vy = keys[pygame.K_DOWN] - keys[pygame.K_UP]
             if vx or vy:
                 self.moving = True
                 norm = math.hypot(vx, vy)
@@ -310,6 +355,7 @@ class GameScreen(Screen):
         if self.overlay is not None:
             self._draw_question(surf)
         self.draw_toasts(surf, CANVAS_W // 2, 84)
+        self.cutscenes.draw(surf)
 
     def _draw_world(self, surf):
         assets = self.app.assets
@@ -323,7 +369,7 @@ class GameScreen(Screen):
                 claimer = self.players.get(t.get("claimed_by"))
                 assets.draw_terminal(surf, sx, sy, t, color_of(claimer["color"]) if claimer else None,
                                      self.lockouts.get(t["terminal_id"], 0), highlight=(t is self.near),
-                                     scale=z / 2 + 0.25)
+                                     scale=z / 2 + 0.25, mine=self.solved_by_me(t) and not self.spectator)
         order = sorted(self.players.items(), key=lambda kv: (kv[1]["y"], kv[0] == self.me_id))
         for pid, p in order:
             if p["status"] == P.STATUS_LEFT:
@@ -398,10 +444,10 @@ class GameScreen(Screen):
         # controls, room code, ping
         room = self.app.room
         rtt = self.app.net.rtt_ms
-        info = pygame.Rect(CANVAS_W - 12 - 384, CANVAS_H - 12 - 66, 384, 66)
+        info = pygame.Rect(CANVAS_W - 12 - 410, CANVAS_H - 12 - 66, 410, 66)
         ui.plate(surf, info, ui.PANEL, 215, 6)
         x = info.x + 12
-        for key, what in (("WASD", "MOVE"), ("E", "USE"), ("1-4", "ANSWER")):
+        for key, what in (("ARROWS", "MOVE"), ("E", "USE"), ("1-4", "ANSWER")):
             k = ui.keycap(surf, key, (x, info.y + 8), size=12)
             t = ui.text(surf, what, (k.right + 6, k.centery), 12, ui.MUTED, bold=True, anchor="midleft")
             x = t.right + 12
@@ -410,11 +456,17 @@ class GameScreen(Screen):
         ui.text(surf, ping, (info.right - 14, info.y + 42), 12,
                 ui.GOOD if rtt is not None and rtt < 120 else ui.WARN, bold=True, anchor="topright")
 
+        self._draw_streak(surf, loc)
+
         # interact prompt
         if self.near is not None and self.overlay is None:
             t = self.near
             locked = self.lockouts.get(t["terminal_id"], 0)
-            if t["state"] == "cooldown":
+            if t["state"] == P.TERMINAL_DISABLED:
+                msg, col = f"T{t['terminal_id']} OFFLINE - USED UP", ui.MUTED
+            elif self.solved_by_me(t):
+                msg, col = f"T{t['terminal_id']} CRACKED - FIND ANOTHER", ui.GOOD
+            elif t["state"] == "cooldown":
                 msg, col = f"T{t['terminal_id']} IS RESETTING", ui.MUTED
             elif locked > 0:
                 msg, col = f"T{t['terminal_id']} LOCKED FOR {math.ceil(locked)} S", ui.BAD
@@ -427,6 +479,38 @@ class GameScreen(Screen):
             k = ui.keycap(surf, "E", (r.x + 16, r.centery), "midleft")
             ui.text(surf, msg, (k.right + 12, r.centery), 18, col, bold=True, anchor="midleft")
 
+    def _draw_streak(self, surf, loc):
+        """Streak pips under the location plate, and the ULTIMATE button once charged."""
+        if not self.is_me_playing():
+            return
+        r = pygame.Rect(loc.x, loc.bottom + 8, loc.w, 40)
+        ui.panel(surf, r, ui.PANEL, 8, ui.WARN if self.ult_ready else ui.TEAL_DK, 230, rivets=False)
+        ui.text(surf, "STREAK", (r.x + 16, r.centery), 12, ui.MUTED, bold=True, anchor="midleft")
+        n = self.ult_streak
+        pip = min(22, (r.w - 110) // max(1, n) - 6)
+        for i in range(n):
+            on = i < self.streak or self.ult_ready
+            pr = pygame.Rect(r.x + 90 + i * (pip + 6), r.centery - 7, pip, 14)
+            pygame.draw.rect(surf, ui.INK, pr.inflate(4, 4))
+            pygame.draw.rect(surf, ui.WARN if on else ui.shade(ui.MUTED, 0.35), pr)
+        self.ult_rect = pygame.Rect(0, 0, 0, 0)
+        if not self.ult_ready:
+            return
+        t = pygame.time.get_ticks()
+        pulse = 0.5 + 0.5 * math.sin(t / 140)
+        b = pygame.Rect(0, 0, 360, 74)
+        b.midbottom = (CANVAS_W // 2, CANVAS_H - 84)
+        glow = b.inflate(int(16 + 14 * pulse), int(12 + 10 * pulse))
+        g = pygame.Surface(glow.size, pygame.SRCALPHA)
+        g.fill((*ui.WARN, int(60 + 80 * pulse)))
+        surf.blit(g, glow)
+        ui.panel(surf, b, ui.mix(ui.ORANGE, ui.WARN, pulse), 10, ui.ICE, 255)
+        ui.hazard(surf, (b.x + 10, b.y + 8, b.w - 20, 8))
+        ui.text(surf, "ULTIMATE READY", (b.centerx, b.y + 24), 22, ui.INK, bold=True, anchor="midtop", shadow=False)
+        ui.text(surf, f"SPACE  -  EVERYONE ELSE -{config.ULT_DAMAGE}", (b.centerx, b.y + 52), 12, ui.INK,
+                bold=True, anchor="midtop", shadow=False)
+        self.ult_rect = b
+
     def _draw_minimap(self, surf, box, dots=5):
         ui.panel(surf, box, ui.PANEL, 8, ui.CYAN, 240, rivets=False)
         inner = box.inflate(-16, -16)
@@ -438,7 +522,11 @@ class GameScreen(Screen):
         for t in self.terminals.values():
             x, y = int(ox + t["x"] * k), int(oy + t["y"] * k)
             claimer = self.players.get(t.get("claimed_by"))
-            if t["state"] == "cooldown":
+            if t["state"] == P.TERMINAL_DISABLED:
+                c = ui.shade(ui.GREY, 0.6)
+            elif self.solved_by_me(t) and not self.spectator:
+                c = ui.shade(ui.GOOD, 0.7)
+            elif t["state"] == "cooldown":
                 c = color_of(claimer["color"]) if claimer else ui.MUTED
             elif self.lockouts.get(t["terminal_id"], 0) > 0:
                 c = ui.BAD
@@ -473,7 +561,8 @@ class GameScreen(Screen):
         ui.text(surf, "GET READY", (cx, band.y + 30), 26, ui.CYAN, bold=True, anchor="midtop")
         ui.text(surf, str(n), (cx, band.centery + int(frac * 6)), 120, ui.WARN, bold=True, anchor="center")
         tip = ("WATCHING FROM THE CONTROL DECK" if self.spectator else
-               "10 TERMINALS, ONE IN EVERY ROOM  -  FIRST CORRECT ANSWER TAKES THE POINTS")
+               f"ARROWS TO MOVE  -  EVERY TERMINAL TAKES {config.TERMINAL_MAX_USES} CREW, ONCE EACH  -  "
+               f"{config.ULT_STREAK} IN A ROW CHARGES YOUR ULTIMATE")
         ui.text(surf, tip, (cx, band.bottom - 44), 14, ui.MUTED, bold=True, anchor="midtop")
 
     def _draw_question(self, surf):
@@ -507,7 +596,9 @@ class GameScreen(Screen):
         y = card_box.bottom + 52
         for label, value, col in (("FIRST CORRECT", f"+{config.POINTS_CORRECT}", ui.GOOD),
                                   ("WRONG ANSWER", str(config.POINTS_WRONG), ui.BAD),
-                                  ("THEN LOCKED", f"{config.WRONG_LOCKOUT_S} S", ui.WARN)):
+                                  ("THEN LOCKED", f"{config.WRONG_LOCKOUT_S} S", ui.WARN),
+                                  ("YOUR STREAK", "READY" if self.ult_ready else f"{self.streak} / {self.ult_streak}",
+                                   ui.WARN)):
             ui.text(surf, label, (lx + 4, y), 12, ui.MUTED, bold=True)
             ui.text(surf, value, (lx + lw - 4, y), 12, col, bold=True, anchor="topright")
             y += 24

@@ -2,7 +2,6 @@ import math
 
 import pygame
 
-from common import config
 from common import protocol as P
 from client import ui
 from client.screens.base import CANVAS_H, CANVAS_W, Screen
@@ -19,9 +18,6 @@ class LoginScreen(Screen):
         self.user = ui.TextInput((fx, self.box.y + 62, fw, 46), "your call sign", max_len=16, label="USERNAME")
         self.pw = ui.TextInput((fx, self.box.y + 144, fw, 46), "secret", secret=True, max_len=64, label="PASSWORD")
         self.user.focused = True
-        if app.admin_mode:
-            self.user.value = config.ADMIN_USERNAME
-            self.user.focused, self.pw.focused = False, True
         half = (fw - 12) // 2
         self.btn_login = ui.Button((fx, self.box.y + 212, half, 50), "LOG IN", self.login, size=18)
         self.btn_register = ui.Button((fx + half + 12, self.box.y + 212, half, 50), "REGISTER", self.register,
@@ -67,6 +63,10 @@ class LoginScreen(Screen):
                 self.user.focused, self.pw.focused = not self.user.focused, self.user.focused
             elif e.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
                 self.login()
+            elif e.key == pygame.K_ESCAPE and self.app.server is None:
+                self.app.disconnect()                       # wrong IP? back to the launcher
+                from client.screens.launch import LaunchScreen
+                self.app.set_screen(LaunchScreen(self.app))
 
     def handle_msg(self, m):
         t = m["type"]
@@ -101,9 +101,7 @@ class LoginScreen(Screen):
                 ui.ICE, anchor="midtop")
 
         ui.panel(surf, self.box, ui.PANEL, 18, ui.CYAN, 238)
-        admin = self.app.admin_mode
-        ui.heading(surf, "ADMIN ACCESS" if admin else "CREW LOGIN", (self.box.x + 36, self.box.y + 16),
-                   self.box.w - 72, ui.WARN if admin else ui.CYAN, 14)
+        ui.heading(surf, "CREW LOGIN", (self.box.x + 36, self.box.y + 16), self.box.w - 72, ui.CYAN, 14)
         for w in (self.user, self.pw):
             w.draw(surf)
         self.btn_login.draw(surf)
@@ -112,13 +110,20 @@ class LoginScreen(Screen):
             for i, line in enumerate(ui.wrap(self.status, 14, self.box.w - 60, True)[:2]):
                 ui.text(surf, line, (cx, self.box.y + 282 + i * 20), 14, self.status_color, bold=True, anchor="midtop")
         else:
-            ui.text(surf, "TAB switches field  -  ENTER logs in", (cx, self.box.y + 290), 12, ui.MUTED,
+            hint = "TAB switches field  -  ENTER logs in" + ("" if self.app.server else "  -  ESC changes server")
+            ui.text(surf, hint, (cx, self.box.y + 290), 12, ui.MUTED,
                     bold=True, anchor="midtop")
 
         # server link
         net = self.app.net
         ok = self.app.connected
-        label = f"SERVER {net.host}:{net.tcp_port}   {'ONLINE' if ok else 'CONNECTING...'}"
+        hosting = self.app.server_addresses()
+        if hosting:
+            lan, ts = hosting
+            ip = ", ".join([lan] + list(ts))
+            label = f"YOU ARE HOSTING  -  OTHERS CONNECT TO {ip}   {'ONLINE' if ok else 'STARTING...'}"
+        else:
+            label = f"SERVER {net.host}:{net.tcp_port}   {'ONLINE' if ok else 'CONNECTING...'}"
         w = ui.text_width(label, 12, True) + 52
         bar = pygame.Rect(0, 0, w, 32)
         bar.midbottom = (cx, CANVAS_H - 18)

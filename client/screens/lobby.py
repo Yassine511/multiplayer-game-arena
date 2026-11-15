@@ -14,14 +14,12 @@ class LobbyScreen(Screen):
         self.rooms = []
         self.refresh_in = 0.0
         self.row_rects = []
-        self.is_admin = app.is_admin
         self.list_box = pygame.Rect(40, 124, 760, 560)
         self.side = pygame.Rect(824, 124, 416, 560)
         sx, sw = self.side.x + 28, self.side.w - 56
         self.code = ui.TextInput((sx, self.side.y + 72, sw - 132, 46), "6 digits", max_len=6,
                                  allowed="0123456789", label="ROOM CODE")
-        label = "SPECTATE" if self.is_admin else "JOIN"
-        self.btn_join = ui.Button((sx + sw - 122, self.side.y + 70, 122, 50), label, self.join_code, size=16)
+        self.btn_join = ui.Button((sx + sw - 122, self.side.y + 70, 122, 50), "JOIN", self.join_code, size=16)
         self.btn_create = ui.Button((sx, self.side.y + 148, sw, 56), "CREATE ROOM", self.create,
                                     color=ui.BTN_GO, size=20)
         self.btn_logout = ui.Button((CANVAS_W - 40 - 150, 44, 150, 44), "LOG OUT", self.logout,
@@ -33,8 +31,7 @@ class LobbyScreen(Screen):
         self.app.net.send(P.msg(P.CREATE_ROOM))
 
     def join(self, code):
-        t = P.SPECTATE_ROOM if self.is_admin else P.JOIN_ROOM
-        self.app.net.send(P.msg(t, code=code))
+        self.app.net.send(P.msg(P.JOIN_ROOM, code=code))
 
     def join_code(self):
         if len(self.code.value) == 6:
@@ -63,6 +60,7 @@ class LobbyScreen(Screen):
             self.rooms = m["rooms"]
         elif t == P.ROOM_CREATED:
             self.app.room = None             # the ROOM_UPDATE right behind fills it
+            self.app.questions = None
             self.app.set_screen(RoomScreen(self.app))
         elif t == P.ROOM_JOINED:
             self.app.room = m["room"]
@@ -80,9 +78,8 @@ class LobbyScreen(Screen):
     def draw(self, surf):
         me = self.app.me or {}
         ui.text(surf, "STATION LOBBY", (40, 30), 44, ui.ICE, bold=True)
-        role = "ADMIN - SPECTATOR" if self.is_admin else "PLAYER"
-        ui.text(surf, f"{str(me.get('username', '?')).upper()}  -  {role}", (44, 88), 14,
-                ui.WARN if self.is_admin else ui.CYAN, bold=True)
+        ui.text(surf, f"{str(me.get('username', '?')).upper()}  -  JOIN TO PLAY, CREATE TO HOST", (44, 88), 14,
+                ui.CYAN, bold=True)
         self.btn_logout.draw(surf)
 
         # room list
@@ -113,19 +110,18 @@ class LobbyScreen(Screen):
                     ui.GOOD if waiting else ui.WARN, bold=True, anchor="midright")
             self.row_rects.append((row, r))
             y += 48
-        ui.text(surf, "CLICK A ROOM TO " + ("SPECTATE" if self.is_admin else "JOIN"),
+        ui.text(surf, "CLICK A ROOM TO JOIN",
                 (box.right - 28, box.bottom - 18), 12, ui.MUTED, bold=True, anchor="bottomright")
 
         # join / create
         side = self.side
         ui.panel(surf, side, ui.PANEL, 18, ui.CYAN, 228)
-        ui.heading(surf, "SPECTATE A ROOM" if self.is_admin else "JOIN WITH A CODE",
+        ui.heading(surf, "JOIN WITH A CODE",
                    (side.x + 28, side.y + 20), side.w - 56, ui.CYAN, 16)
         self.code.draw(surf)
         self.btn_join.draw(surf)
         self.btn_create.draw(surf)
-        hint = ("You host as spectator: share the code or the QR, then press Start."
-                if self.is_admin else "Host your own room, or join a friend's with its code.")
+        hint = "The host watches: pick the questions, share the code, press Start."
         for i, line in enumerate(ui.wrap(hint.upper(), 12, side.w - 56, True)[:2]):
             ui.text(surf, line, (side.x + 28, side.y + 216 + i * 20), 12, ui.MUTED, bold=True)
 

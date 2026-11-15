@@ -27,6 +27,8 @@ LEAVE_ROOM = "LEAVE_ROOM"
 ROOM_UPDATE = "ROOM_UPDATE"
 ROOM_CLOSED = "ROOM_CLOSED"
 SET_CHARACTER = "SET_CHARACTER"        # {character: 0-9}; changes the roster entry while waiting
+SET_QUESTIONS = "SET_QUESTIONS"        # host: {action: append|replace|default|clear|remove, questions, index}
+QUESTIONS = "QUESTIONS"                # server -> host only: the room's bank, answers included
 
 # --- TCP: game -----------------------------------------------------------------
 START_GAME = "START_GAME"
@@ -41,6 +43,9 @@ SCORE_UPDATE = "SCORE_UPDATE"
 TIME_SYNC = "TIME_SYNC"
 PLAYER_STATUS = "PLAYER_STATUS"
 GAME_OVER = "GAME_OVER"
+USE_ULTIMATE = "USE_ULTIMATE"          # player spends a charged ultimate
+ULTIMATE_READY = "ULTIMATE_READY"      # server -> that player: streak reached, button unlocked
+ULTIMATE = "ULTIMATE"                  # broadcast: {player_id, name, character, victims} -> cutscene
 
 # --- TCP: connection -----------------------------------------------------------
 PING = "PING"
@@ -61,6 +66,7 @@ PHASE_PLAYING = "playing"
 
 TERMINAL_ACTIVE = "active"
 TERMINAL_COOLDOWN = "cooldown"
+TERMINAL_DISABLED = "disabled"         # cracked by TERMINAL_MAX_USES players: offline for the round
 
 RESULT_CORRECT = "correct"
 RESULT_WRONG = "wrong"
@@ -95,6 +101,10 @@ E_BAD_TERMINAL = "bad_terminal"
 E_TOO_FAR = "too_far"
 E_LOCKED_OUT = "locked_out"
 E_COOLDOWN = "cooldown"
+E_DISABLED = "terminal_disabled"
+E_ALREADY_SOLVED = "already_solved"
+E_NO_QUESTIONS = "no_questions"
+E_NO_ULTIMATE = "no_ultimate"
 E_INTERNAL = "internal"
 
 

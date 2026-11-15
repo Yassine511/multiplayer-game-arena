@@ -64,11 +64,11 @@ class CharacterPicker:
                 self.close()
             elif k in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
                 self.pick(self.focus)
-            elif k in (pygame.K_LEFT, pygame.K_a):
+            elif k == pygame.K_LEFT:
                 self.focus = (self.focus - 1) % CH.COUNT
-            elif k in (pygame.K_RIGHT, pygame.K_d):
+            elif k == pygame.K_RIGHT:
                 self.focus = (self.focus + 1) % CH.COUNT
-            elif k in (pygame.K_UP, pygame.K_w, pygame.K_DOWN, pygame.K_s):
+            elif k in (pygame.K_UP, pygame.K_DOWN):
                 self.focus = (self.focus + COLS) % CH.COUNT
             elif e.unicode and e.unicode.isdigit():
                 i = (int(e.unicode) - 1) % 10

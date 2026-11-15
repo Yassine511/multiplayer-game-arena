@@ -17,6 +17,7 @@ class ResultsScreen(Screen):
         super().__init__(app)
         self.board = game_over.get("leaderboard", [])
         self.winner = game_over.get("winner")
+        self.reason = game_over.get("reason")
         self.box = pygame.Rect(560, 150, 680, 470)
         self.btn_back = ui.Button((self.box.right - 280, 640, 280, 52), "BACK TO ROOM", self.back, size=18)
         self.t0 = pygame.time.get_ticks()
@@ -76,7 +77,8 @@ class ResultsScreen(Screen):
                 pygame.draw.polygon(surf, ui.INK, pts, 2)
 
     def draw(self, surf):
-        ui.text(surf, "TIME IS UP", (40, 30), 44, ui.ICE, bold=True)
+        ui.text(surf, "ALL TERMINALS CRACKED" if self.reason == "all_cracked" else "TIME IS UP", (40, 30), 44,
+                ui.ICE, bold=True)
         if self.winner:
             ui.text(surf, f"{str(self.winner).upper()} WINS THE STATION", (44, 88), 20, ui.WARN, bold=True)
         else:

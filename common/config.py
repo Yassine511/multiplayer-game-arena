@@ -21,7 +21,7 @@ UDP_PORT = _env_int("ARENA_UDP_PORT", 5001)
 PUBLIC_HOST = os.environ.get("ARENA_PUBLIC_HOST", "")       # address put in join string / QR (auto if empty)
 
 MAX_DATAGRAM = 1200          # bytes; below Tailscale's 1280 MTU, so never fragmented
-MAX_LINE = 64 * 1024         # longest TCP line we accept before dropping the client
+MAX_LINE = 512 * 1024        # longest TCP line we accept (a full question bank fits) before dropping the client
 
 # --- Rooms ---------------------------------------------------------------------
 MIN_PLAYERS = max(1, _env_int("ARENA_MIN_PLAYERS", 3))   # set to 1 on the server to test alone
@@ -51,7 +51,20 @@ TIME_SYNC_INTERVAL_S = 10.0
 POINTS_CORRECT = 100
 POINTS_WRONG = -20           # score floors at 0
 
+# --- Terminals -----------------------------------------------------------------
+# A terminal can be cracked by this many different players, once each, then it
+# goes offline for the rest of the round: nobody can camp one terminal.
+TERMINAL_MAX_USES = max(1, _env_int("ARENA_TERMINAL_USES", 3))
+
+# --- Ultimate --------------------------------------------------------------------
+ULT_STREAK = max(1, _env_int("ARENA_ULT_STREAK", 5))     # correct answers in a row to charge it
+ULT_DAMAGE = 10                                          # points every other player loses
+
+# --- Host question bank ----------------------------------------------------------
+MAX_QUESTIONS = 200
+MAX_QUESTION_TEXT = 220
+MAX_CHOICE_TEXT = 90
+MAX_TOPIC_TEXT = 20
+
 # --- Accounts ------------------------------------------------------------------
 PBKDF2_ITERATIONS = 200_000
-ADMIN_USERNAME = os.environ.get("ARENA_ADMIN_USER", "admin")
-ADMIN_PASSWORD = os.environ.get("ARENA_ADMIN_PASSWORD", "admin123")

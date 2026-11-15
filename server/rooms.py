@@ -30,6 +30,8 @@ class PlayerState:
         self.last_seq = -1
         self.last_pos_time = 0.0
         self.lockouts = {}                    # terminal_id -> monotonic time the lockout ends
+        self.streak = 0                       # correct answers in a row
+        self.ult_ready = False                # charged by a streak of config.ULT_STREAK
 
     @property
     def connected(self):
@@ -43,13 +45,15 @@ class Room:
         self.host_id = host_session.player_id
         self.host_name = host_session.username
         self.players = {}                     # player_id -> PlayerState (join order)
-        self.spectators = {}                  # player_id -> Session (admins)
+        self.spectators = {}                  # player_id -> Session (the host, and anyone watching)
         self.phase = P.PHASE_WAITING
         self.join_string = f"arena://{public_host}:{config.TCP_PORT}/{code}"
         self.closed = False
         self.needs_cleanup = False
         self._join_counter = 0
-        # game fields (filled by game.reset_for_game)
+        self.bank = []                        # the host's questions (answers included; never sent to players)
+        self.bank_source = ""                 # short label for the host's screen
+        # game fields (filled by game.start_game)
         self.terminals = {}
         self.question_pool = []
         self.countdown_end = 0.0
@@ -93,7 +97,15 @@ class Room:
             min=config.MIN_PLAYERS,
             join_string=self.join_string,
             spectators=len(self.spectators),
+            questions=len(self.bank),
+            bank_source=self.bank_source,
         )
+
+    def questions_message(self):
+        """QUESTIONS, for the host only: the bank with its answers, so it can be edited."""
+        return P.msg(P.QUESTIONS, questions=[{k: q[k] for k in ("text", "choices", "answer", "topic")}
+                                             for q in self.bank],
+                     source=self.bank_source, max=config.MAX_QUESTIONS)
 
     def summary(self):
         return {
@@ -134,19 +146,14 @@ class RoomRegistry:
             room = Room(self._new_code(), session, self.server.public_host)
             self.rooms[room.code] = room
             with room.lock:
-                if session.is_admin:
-                    room.spectators[session.player_id] = session   # admin: host-spectator
-                else:
-                    room.add_player(session)                        # player: host and player
+                room.spectators[session.player_id] = session        # the host runs the room, never plays
                 session.room = room
                 session.send(P.msg(P.ROOM_CREATED, code=room.code, join_string=room.join_string))
                 room.broadcast(room.roster())
+                session.send(room.questions_message())
         self.server.log.info("room %s created by %s", room.code, session.username)
 
     def join_room(self, session, code):
-        if session.is_admin:
-            session.send(P.error(P.E_FORBIDDEN, "Admins cannot play; use Spectate"))
-            return
         code = str(code or "").strip()
         with self.server.lock:
             if session.room is not None:
@@ -170,9 +177,6 @@ class RoomRegistry:
                 room.broadcast(roster)
 
     def spectate_room(self, session, code):
-        if not session.is_admin:
-            session.send(P.error(P.E_FORBIDDEN, "Only the admin can spectate"))
-            return
         code = str(code or "").strip()
         with self.server.lock:
             room = self.rooms.get(code)
@@ -183,6 +187,9 @@ class RoomRegistry:
                 session.send(P.error(P.E_ALREADY_IN_ROOM, "Leave your current room first"))
                 return
             with room.lock:
+                if session.player_id in room.players:
+                    session.send(P.error(P.E_ALREADY_IN_ROOM, "You are playing in this room"))
+                    return
                 room.spectators[session.player_id] = session
                 session.room = room
                 roster = room.roster()
@@ -209,6 +216,64 @@ class RoomRegistry:
                 if p.character != character:
                     p.character = character
                     room.broadcast(room.roster())
+
+    def set_questions(self, session, m):
+        """Host edits the room's bank while the room is waiting."""
+        action = m.get("action")
+        with self.server.lock:
+            room = session.room
+            if room is None:
+                session.send(P.error(P.E_NOT_IN_ROOM, "You are not in a room"))
+                return
+            with room.lock:
+                if session.player_id != room.host_id:
+                    session.send(P.error(P.E_NOT_HOST, "Only the host chooses the questions"))
+                    return
+                if room.phase != P.PHASE_WAITING:
+                    session.send(P.error(P.E_ROOM_STARTED, "Questions are locked while a game runs"))
+                    return
+                bank = [{k: q[k] for k in ("text", "choices", "answer", "topic")} for q in room.bank]
+                source = room.bank_source
+                if action == "default":                    # appends, like every other bank control
+                    label = "built-in networking set"
+                    source = label if not bank else (source if source == label else "mixed")
+                    bank.extend(dict(q) for q in game.DEFAULT_BANK)
+                elif action == "clear":
+                    bank, source = [], ""
+                elif action == "remove":
+                    i = m.get("index")
+                    if not isinstance(i, int) or isinstance(i, bool) or not 0 <= i < len(bank):
+                        session.send(P.error(P.E_INVALID, "No such question"))
+                        return
+                    del bank[i]
+                elif action in ("append", "replace"):
+                    items = m.get("questions")
+                    if not isinstance(items, list) or not items:
+                        session.send(P.error(P.E_INVALID, "No questions given"))
+                        return
+                    try:
+                        new = [game.clean_question(q) for q in items]
+                    except ValueError as e:
+                        session.send(P.error(P.E_INVALID, f"Question rejected: {e}"))
+                        return
+                    if action == "replace":
+                        bank = []
+                    bank.extend(new)
+                    label = str(m.get("source") or "written by the host")[:40]
+                    if not source or action == "replace" or not bank[:-len(new)]:
+                        source = label
+                    elif source != label:
+                        source = "mixed"
+                else:
+                    session.send(P.error(P.E_BAD_REQUEST, "action must be append, replace, default, clear or remove"))
+                    return
+                if len(bank) > config.MAX_QUESTIONS:
+                    session.send(P.error(P.E_INVALID, f"At most {config.MAX_QUESTIONS} questions per room"))
+                    return
+                room.bank = game.number_bank(bank)
+                room.bank_source = source if room.bank else ""
+                session.send(room.questions_message())
+                room.broadcast(room.roster())
 
     def leave_room(self, session, reason="left"):
         """LEAVE_ROOM, LOGOUT, or a drop while the room is waiting."""

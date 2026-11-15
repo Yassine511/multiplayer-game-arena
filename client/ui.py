@@ -295,6 +295,17 @@ class Button:
              ICE if self.enabled else MUTED, bold=True, anchor="center")
 
 
+def clipboard_text():
+    """Text on the system clipboard, or "" (needs pygame 2.2+; never raises)."""
+    try:
+        if not pygame.scrap.get_init():
+            pygame.scrap.init()
+        t = pygame.scrap.get_text()
+        return t or ""
+    except Exception:
+        return ""
+
+
 class TextInput:
     def __init__(self, rect, placeholder="", secret=False, max_len=32, allowed=None, label=None):
         self.rect = pygame.Rect(rect)
@@ -316,6 +327,16 @@ class TextInput:
                 return True
             if e.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_TAB, pygame.K_ESCAPE):
                 return False
+            if e.key == pygame.K_v and e.mod & (pygame.KMOD_CTRL | pygame.KMOD_META):
+                for ch in " ".join(clipboard_text().split()):
+                    if len(self.value) >= self.max_len:
+                        break
+                    if self.allowed is None or ch in self.allowed:
+                        self.value += ch
+                return True
+            if e.key == pygame.K_BACKSPACE and e.mod & pygame.KMOD_CTRL:
+                self.value = ""
+                return True
             ch = e.unicode
             if ch and ch.isprintable() and len(self.value) < self.max_len:
                 if self.allowed is None or ch in self.allowed:

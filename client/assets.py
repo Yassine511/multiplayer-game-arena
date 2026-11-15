@@ -168,13 +168,26 @@ class Assets:
         return rect
 
     # --- terminals ----------------------------------------------------------------------
-    def draw_terminal(self, surf, sx, sy, t, claimer_color=None, locked_s=0.0, highlight=False, scale=1.0):
-        """Holographic beacon floating over the console at screen (sx, sy)."""
+    def draw_terminal(self, surf, sx, sy, t, claimer_color=None, locked_s=0.0, highlight=False, scale=1.0,
+                      mine=False):
+        """Holographic beacon floating over the console at screen (sx, sy).
+
+        mine: this player already cracked it (it is done for them); a "disabled" terminal
+        was used up by config.TERMINAL_MAX_USES players and is offline for the round."""
         sx, sy = int(sx), int(sy)
         now = pygame.time.get_ticks() / 1000
+        disabled = t["state"] == "disabled"
         cooldown = t["state"] == "cooldown"
-        locked = locked_s > 0 and not cooldown
-        color = (claimer_color or ui.MUTED) if cooldown else ui.BAD if locked else ui.CYAN
+        locked = locked_s > 0 and not cooldown and not disabled
+        if disabled:
+            color = ui.shade(ui.GREY, 0.75)
+        elif cooldown:
+            color = claimer_color or ui.MUTED
+        elif mine:
+            color = ui.shade(ui.GOOD, 0.8)
+        else:
+            color = ui.BAD if locked else ui.CYAN
+        cooldown = cooldown or disabled          # both: no bobbing, dark screen
         pulse = 0.5 + 0.5 * math.sin(now * 3.2 + t["terminal_id"])
         u = max(1, int(round(2 * scale)))                      # beacon pixel size
 
@@ -206,7 +219,12 @@ class Assets:
         pygame.draw.rect(surf, color, scr)
         inner = scr.inflate(-u * 2, -u * 2)
         pygame.draw.rect(surf, (10, 22, 52) if not cooldown else (26, 28, 50), inner)
-        if cooldown:                                            # claimed: drain bar
+        if disabled:                                            # offline: flat line
+            pygame.draw.rect(surf, color, (inner.x + u, inner.centery - u // 2, inner.w - 2 * u, u))
+        elif mine and not cooldown_only(t):                     # done for me: tick
+            for i, (dx, dy) in enumerate(((1, 3), (2, 4), (3, 3), (4, 2), (5, 1))):
+                pygame.draw.rect(surf, ui.GOOD, (inner.x + dx * u, inner.y + dy * u - u, u, u))
+        elif cooldown:                                          # claimed: drain bar
             frac = max(0.0, min(1.0, t.get("ready_in", 0) / config.TERMINAL_COOLDOWN_S))
             pygame.draw.rect(surf, color, (inner.x + u, inner.centery - u // 2, int((inner.w - 2 * u) * frac), u))
         elif locked:                                            # locked for me: X
@@ -221,8 +239,11 @@ class Assets:
                 pygame.draw.rect(surf, ui.ICE, (inner.x + 4 * u, inner.y + 3 * u, 3 * u, u))
 
         size = 14 if scale >= 1.5 else 12
-        label = f"T{t['terminal_id']}"
-        if cooldown and t.get("ready_in", 0) > 0:
+        used, cap = len(t.get("solvers") or []), t.get("max_uses")
+        label = f"T{t['terminal_id']}" + (f" {used}/{cap}" if cap else "")
+        if disabled:
+            label = f"T{t['terminal_id']} OFFLINE"
+        elif cooldown and t.get("ready_in", 0) > 0:
             label += f"  {math.ceil(t['ready_in'])}s"
         elif locked:
             label += f"  LOCK {math.ceil(locked_s)}s"
@@ -231,6 +252,10 @@ class Assets:
         bg.midbottom = (sx, scr.top - 3 * u)
         ui.plate(surf, bg, ui.INK, 215, 2)
         ui.text(surf, label, (bg.centerx, bg.centery), size, color, bold=True, anchor="center")
+
+
+def cooldown_only(t):
+    return t.get("state") == "cooldown"
 
 
 # --- characters ---------------------------------------------------------------------------------

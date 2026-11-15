@@ -66,16 +66,6 @@ class UserStore:
             return None
         return {"id": rec["id"], "username": username, "role": rec["role"]}
 
-    def ensure_admin(self, username, password):
-        with self.lock:
-            exists = username in self.users
-        if not exists:
-            ok, err = self.create(username, password, role="admin")
-            if not ok:
-                raise RuntimeError(f"cannot create admin account: {err}")
-            return True
-        return False
-
 
 class Session:
     """One logged-in user. Survives a dropped TCP connection for RESUME_WINDOW_S."""
@@ -90,10 +80,6 @@ class Session:
         self.room = None              # Room the user is in (player or spectator)
         self.disconnected_at = None   # monotonic time of the drop
         self.character = None         # index into common.characters, None = not chosen yet
-
-    @property
-    def is_admin(self):
-        return self.role == "admin"
 
     def send(self, obj):
         conn = self.conn

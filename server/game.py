@@ -243,7 +243,18 @@ def tick(room, now):
             game_over(room, now)
 
 
-def game_over(room, now):
+def stop_game(room, session, now):
+    """Host ends a countdown or a running game early: same GAME_OVER as at the bell."""
+    if session.player_id != room.host_id:
+        session.send(P.error(P.E_NOT_HOST, "Only the host can stop the game"))
+        return
+    if room.phase not in (P.PHASE_COUNTDOWN, P.PHASE_PLAYING):
+        session.send(P.error(P.E_NOT_PLAYING, "No game is running"))
+        return
+    game_over(room, now, reason="stopped")
+
+
+def game_over(room, now, reason=None):
     ranked = sorted(room.players.values(), key=_rank_key)
     leaderboard = [
         {"rank": i + 1, "id": p.id, "name": p.name, "score": p.score,
@@ -251,11 +262,13 @@ def game_over(room, now):
         for i, p in enumerate(ranked)
     ]
     winner = ranked[0].name if ranked and ranked[0].score > 0 else None
-    all_cracked = bool(room.terminals) and now < room.end_time and not _anything_left(room)
+    if reason is None:
+        all_cracked = bool(room.terminals) and now < room.end_time and not _anything_left(room)
+        reason = "all_cracked" if all_cracked else "time"
     room.phase = P.PHASE_WAITING
     room.terminals = {}
     room.broadcast(P.msg(P.GAME_OVER, leaderboard=leaderboard, winner=winner,
-                         reason="all_cracked" if all_cracked else "time"))
+                         reason=reason))
     room.needs_cleanup = True          # server removes gone players under server.lock
 
 

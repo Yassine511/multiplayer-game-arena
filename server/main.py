@@ -174,6 +174,9 @@ class Server:
         if t == P.PING:
             conn.send(P.msg(P.PONG, t=m.get("t")))
             return
+        if t in (P.REGISTER, P.LOGIN, P.RESUME) and m.get("version") != P.VERSION:
+            conn.send(P.error(P.E_VERSION, self._version_text(m.get("version"))))
+            return
         if t == P.REGISTER:
             return self._on_register(conn, m)
         if t == P.LOGIN:
@@ -202,9 +205,15 @@ class Server:
             if s.room is None:
                 s.send(P.error(P.E_NOT_IN_ROOM, "You are not in a room"))
             return self.rooms.leave_room(s)
-        if t in (P.START_GAME, P.OPEN_TERMINAL, P.ANSWER, P.USE_ULTIMATE):
+        if t in (P.START_GAME, P.STOP_GAME, P.OPEN_TERMINAL, P.ANSWER, P.USE_ULTIMATE):
             return self._on_game_msg(s, m)
         conn.send(P.error(P.E_BAD_REQUEST, f"Unknown message type {t}"))
+
+    @staticmethod
+    def _version_text(theirs):
+        if not isinstance(theirs, int) or theirs < P.VERSION:
+            return "Your game is an older version than this server's - get the same arena build as the host"
+        return "This server runs an older version of the game - the host must run the same arena build as you"
 
     def _on_game_msg(self, s, m):
         room = s.room
@@ -215,6 +224,9 @@ class Server:
         with room.lock:
             if m["type"] == P.START_GAME:
                 game.start_game(room, s)
+                return
+            if m["type"] == P.STOP_GAME:
+                game.stop_game(room, s, now)
                 return
             p = room.players.get(s.player_id)
             if p is None or not p.connected:
@@ -244,7 +256,7 @@ class Server:
 
     def _login_ok(self, s):
         return P.msg(P.LOGIN_OK, player_id=s.player_id, username=s.username, token=s.token,
-                     role=s.role, udp_port=self.udp_port)
+                     role=s.role, udp_port=self.udp_port, version=P.VERSION)
 
     def _on_login(self, conn, m):
         if conn.session is not None:
@@ -296,7 +308,8 @@ class Server:
             room = s.room
             if room is None:
                 s.send(P.msg(P.RESUME_OK, player_id=s.player_id, username=s.username, token=s.token,
-                             role=s.role, udp_port=self.udp_port, room=None, game=None, spectator=False))
+                             role=s.role, udp_port=self.udp_port, room=None, game=None, spectator=False,
+                             version=P.VERSION))
                 return
             with room.lock:
                 spectator = s.player_id in room.spectators
@@ -304,7 +317,7 @@ class Server:
                 s.send(P.msg(P.RESUME_OK, player_id=s.player_id, username=s.username, token=s.token,
                              role=s.role, udp_port=self.udp_port, room=room.roster(),
                              game=game.started_message(room) if in_game else None,
-                             spectator=spectator))
+                             spectator=spectator, version=P.VERSION))
                 if s.player_id == room.host_id:
                     s.send(room.questions_message())
                 p = room.players.get(s.player_id)
@@ -347,7 +360,7 @@ class Server:
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Multiplayer Game Arena server")
+    ap = argparse.ArgumentParser(description="Ultimate Slop Showdown server")
     ap.add_argument("--host", default=config.BIND_HOST, help="bind address (default 0.0.0.0)")
     ap.add_argument("--tcp-port", type=int, default=config.TCP_PORT)
     ap.add_argument("--udp-port", type=int, default=config.UDP_PORT)

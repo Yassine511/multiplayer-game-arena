@@ -38,6 +38,6 @@ exe = EXE(
     strip=False,
     upx=False,
     runtime_tmpdir=None,
-    console=True,            # the host sees the server's IP and log lines; players can ignore it
+    console=False,           # no terminal window behind the game; logs go to arena_data/arena.log
     icon=None,
 )

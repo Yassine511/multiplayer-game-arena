@@ -7,6 +7,10 @@ from client import ui
 from client.screens.base import CANVAS_H, CANVAS_W, Screen
 
 
+OLD_SERVER = ("This server runs an older version of the game. "
+              "The host must run the same arena build as you.")
+
+
 class LoginScreen(Screen):
     backdrop = "login"
 
@@ -37,7 +41,7 @@ class LoginScreen(Screen):
         if not u or not p:
             self._set_status("Enter a username and a password", ui.WARN)
             return
-        if not self.app.net.send(P.msg(P.LOGIN, username=u, password=p)):
+        if not self.app.net.send(P.msg(P.LOGIN, username=u, password=p, version=P.VERSION)):
             self._set_status("Not connected to the server yet", ui.BAD)
             return
         self._set_status("Logging in...")
@@ -47,7 +51,7 @@ class LoginScreen(Screen):
         if not u or not p:
             self._set_status("Choose a username and a password", ui.WARN)
             return
-        if not self.app.net.send(P.msg(P.REGISTER, username=u, password=p)):
+        if not self.app.net.send(P.msg(P.REGISTER, username=u, password=p, version=P.VERSION)):
             self._set_status("Not connected to the server yet", ui.BAD)
             return
         self._auto_login = True
@@ -72,6 +76,10 @@ class LoginScreen(Screen):
         t = m["type"]
         if t == P.LOGIN_OK:
             from client.screens.lobby import LobbyScreen
+            if m.get("version") != P.VERSION:          # an older server ignores our version field
+                self.app.net.send(P.msg(P.LOGOUT))
+                self._set_status(OLD_SERVER, ui.BAD)
+                return
             self.app.on_login(m)
             self.app.set_screen(LobbyScreen(self.app))
         elif t == P.REGISTER_OK:
@@ -89,8 +97,8 @@ class LoginScreen(Screen):
 
         # title, floating
         ty = 70 + int(math.sin(t * 1.3) * 4)
-        ui.text(surf, "GAME ARENA", (cx + 5, ty + 6), 84, ui.INK, bold=True, anchor="midtop", shadow=False)
-        ui.text(surf, "GAME ARENA", (cx, ty), 84, ui.ICE, bold=True, anchor="midtop")
+        ui.text(surf, "ULTIMATE SLOP SHOWDOWN", (cx + 5, ty + 6), 84, ui.INK, bold=True, anchor="midtop", shadow=False)
+        ui.text(surf, "ULTIMATE SLOP SHOWDOWN", (cx, ty), 84, ui.ICE, bold=True, anchor="midtop")
         sub = "MEDITERRANEAN UNIVERSITY STATION"
         w = ui.text_width(sub, 16, True) + 40
         tag = pygame.Rect(0, 0, w, 34)
@@ -110,9 +118,9 @@ class LoginScreen(Screen):
             for i, line in enumerate(ui.wrap(self.status, 14, self.box.w - 60, True)[:2]):
                 ui.text(surf, line, (cx, self.box.y + 282 + i * 20), 14, self.status_color, bold=True, anchor="midtop")
         else:
-            hint = "TAB switches field  -  ENTER logs in" + ("" if self.app.server else "  -  ESC changes server")
-            ui.text(surf, hint, (cx, self.box.y + 290), 12, ui.MUTED,
-                    bold=True, anchor="midtop")
+            hints = ["TAB NEXT FIELD  -  ENTER LOGS IN"] + ([] if self.app.server else ["ESC CHANGES SERVER"])
+            for i, hint in enumerate(hints):
+                ui.text(surf, hint, (cx, self.box.y + 284 + i * 20), 12, ui.MUTED, bold=True, anchor="midtop")
 
         # server link
         net = self.app.net

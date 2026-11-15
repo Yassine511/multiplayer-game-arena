@@ -9,6 +9,11 @@ import json
 
 from common import config
 
+# Bumped whenever messages change meaning. LOGIN / REGISTER / RESUME carry it and
+# LOGIN_OK / RESUME_OK echo it, so a client and a server from different builds
+# refuse each other with a clear message instead of failing half-way through a game.
+VERSION = 3
+
 # --- TCP: account and lobby ----------------------------------------------------
 REGISTER = "REGISTER"
 REGISTER_OK = "REGISTER_OK"
@@ -32,6 +37,7 @@ QUESTIONS = "QUESTIONS"                # server -> host only: the room's bank, a
 
 # --- TCP: game -----------------------------------------------------------------
 START_GAME = "START_GAME"
+STOP_GAME = "STOP_GAME"                # host: end the running game now (everyone gets GAME_OVER)
 GAME_COUNTDOWN = "GAME_COUNTDOWN"
 GAME_STARTED = "GAME_STARTED"
 OPEN_TERMINAL = "OPEN_TERMINAL"
@@ -106,6 +112,7 @@ E_ALREADY_SOLVED = "already_solved"
 E_NO_QUESTIONS = "no_questions"
 E_NO_ULTIMATE = "no_ultimate"
 E_INTERNAL = "internal"
+E_VERSION = "version_mismatch"
 
 
 def msg(type_, **fields):

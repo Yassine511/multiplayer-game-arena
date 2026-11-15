@@ -95,7 +95,7 @@ class NetClient:
             self._reconnecting = False
             self.inbox.put({"type": "_CONNECTED"})
             if self.token:
-                self.send(P.msg(P.RESUME, token=self.token))
+                self.send(P.msg(P.RESUME, token=self.token, version=P.VERSION))
             return
 
     def _lost(self, gen):

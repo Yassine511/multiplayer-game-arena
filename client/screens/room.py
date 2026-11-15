@@ -24,7 +24,7 @@ class RoomScreen(Screen):
         super().__init__(app)
         self.left = pygame.Rect(36, 32, 430, 656)
         self.right = pygame.Rect(CANVAS_W - 36 - 330, 32, 330, 408)
-        self.brief = pygame.Rect(490, 458, 452, 230)
+        self.brief = pygame.Rect(490, 458, CANVAS_W - 36 - 490, 230)      # under both right-hand panels
         self.pick = pygame.Rect(490, 32, 400, 408)
         bx, by, bw = self.left.x + 28, self.left.bottom - 76, self.left.w - 56
         self.btn_start = ui.Button((bx, by, bw - 142, 52), "START GAME", self.start, color=ui.BTN_GO, size=18)
@@ -114,8 +114,13 @@ class RoomScreen(Screen):
     def _is_host(self):
         return self.app.is_host
 
+    def _runs_bank(self):
+        """The bank panel is shown (and clickable) only for a host who is not also playing:
+        its buttons sit under the character arrows, so a playing host would hit them blindly."""
+        return self._is_host() and not self._is_player()
+
     def handle_event(self, e):
-        if e.type == pygame.DROPFILE and self._is_host():
+        if e.type == pygame.DROPFILE and self._runs_bank():
             if isinstance(self.modal, CsvImport):
                 self.modal.drop(e.file)
             else:
@@ -130,6 +135,7 @@ class RoomScreen(Screen):
             return
         if self._is_host():
             self.btn_start.handle(e)
+        if self._runs_bank():
             for b in (self.btn_write, self.btn_csv, self.btn_default, self.btn_clear):
                 b.handle(e)
             if e.type == pygame.MOUSEWHEEL:
@@ -235,7 +241,7 @@ class RoomScreen(Screen):
 
         if self._is_player():
             self._draw_showcase(surf)
-        elif self._is_host():
+        elif self._runs_bank():
             self._draw_bank(surf)
 
         # join info + QR (the QR encodes the same join info as the code)
@@ -276,17 +282,20 @@ class RoomScreen(Screen):
                  ("1-4", f"FIRST CORRECT +{config.POINTS_CORRECT}, WRONG {config.POINTS_WRONG}"),
                  ("x" + str(config.TERMINAL_MAX_USES), f"EACH TERMINAL: {config.TERMINAL_MAX_USES} CREW, ONCE EACH"),
                  ("SPACE", f"{config.ULT_STREAK} IN A ROW = ULTIMATE: -{config.ULT_DAMAGE} TO ALL")]
+        key_w = max(max(26, ui.text_width(k, 12, True) + 14) for k, _ in steps)
+        tx = brief.x + 24 + key_w + 16                        # text column starts after the widest key
         y = brief.y + 46
         for key, what in steps:
             k = ui.keycap(surf, key, (brief.x + 24, y), size=12)
-            ui.text(surf, ui.fit(what, 12, brief.right - 28 - (brief.x + 112), True),
-                    (brief.x + 112, k.centery), 12, ui.ICE, bold=True, anchor="midleft")
-            y += 30
+            ui.text(surf, ui.fit(what, 12, brief.right - 28 - tx, True), (tx, k.centery), 12, ui.ICE,
+                    bold=True, anchor="midleft")
+            y += 29
+        ui.stitch(surf, brief.x + 24, brief.right - 24, brief.bottom - 38, ui.TEAL_DK)
         n = room.get("questions", 0)
-        ui.text(surf, f"{n} QUESTIONS LOADED" if n else "HOST IS CHOOSING QUESTIONS", (brief.x + 24, brief.bottom - 22),
-                12, ui.GOOD if n else ui.MUTED, bold=True, anchor="bottomleft")
-        ui.text(surf, f"BEST AFTER {length} WINS", (brief.right - 28, brief.bottom - 22), 12,
-                ui.WARN, bold=True, anchor="bottomright")
+        ui.text(surf, f"{n} QUESTIONS LOADED" if n else "HOST IS CHOOSING QUESTIONS", (brief.x + 24, brief.bottom - 20),
+                12, ui.GOOD if n else ui.MUTED, bold=True, anchor="midleft")
+        ui.text(surf, f"HIGHEST SCORE AFTER {length} WINS", (brief.right - 28, brief.bottom - 20), 12,
+                ui.WARN, bold=True, anchor="midright")
 
     def _draw_bank(self, surf):
         """Host: what the crew will be asked. Write, import, built-in set, delete rows."""

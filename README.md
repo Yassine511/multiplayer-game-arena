@@ -1,4 +1,4 @@
-# Multiplayer Game Arena (CS411 Project #2)
+# Ultimate Slop Showdown (CS411 Project #2: Multiplayer Game Arena)
 
 A competitive 2D arena: 3 to 10 players walk a shared map to 10 question
 terminals and race to answer MCQs within 3 minutes. Whoever creates a room
@@ -25,7 +25,7 @@ chmod +x arena-linux
 
 1. **The PC that runs the server:** start the file and click **HOST ON THIS PC**.
    The login screen then shows the address others should type
-   (LAN IP and, if running, Tailscale IP). A console window shows the server log.
+   (LAN IP and, if running, Tailscale IP). The server log goes to `arena_data/arena.log`.
 2. **Every other PC:** start the file, type that address under
    **JOIN A SERVER**, press **CONNECT**. Mistyped it? Press Esc on the login screen to go back.
 3. Register or log in. In the lobby, **CREATE ROOM** makes you the host

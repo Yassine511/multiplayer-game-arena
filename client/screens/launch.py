@@ -19,7 +19,7 @@ class LaunchScreen(Screen):
         self.host_box = pygame.Rect(cx - 520, 270, 500, 330)
         self.join_box = pygame.Rect(cx + 20, 270, 500, 330)
         hx, hw = self.host_box.x + 36, self.host_box.w - 72
-        self.btn_host = ui.Button((hx, self.host_box.bottom - 84, hw, 56), "HOST ON THIS PC", self.host,
+        self.btn_host = ui.Button((hx, self.host_box.bottom - 98, hw, 56), "HOST ON THIS PC", self.host,
                                   color=ui.BTN_GO, size=20)
         jx, jw = self.join_box.x + 36, self.join_box.w - 72
         self.addr = ui.TextInput((jx, self.join_box.y + 150, jw, 46), "e.g. 192.168.1.20", max_len=40,
@@ -28,7 +28,7 @@ class LaunchScreen(Screen):
         if self.addr.value in ("127.0.0.1", "localhost"):
             self.addr.value = ""
         self.addr.focused = True
-        self.btn_join = ui.Button((jx, self.join_box.bottom - 84, jw, 56), "CONNECT", self.join, size=20)
+        self.btn_join = ui.Button((jx, self.join_box.bottom - 98, jw, 56), "CONNECT", self.join, size=20)
         if notice:
             self.toasts.add(notice, ui.WARN, 4)
 
@@ -57,8 +57,8 @@ class LaunchScreen(Screen):
         cx = CANVAS_W // 2
         t = pygame.time.get_ticks() / 1000
         ty = 70 + int(math.sin(t * 1.3) * 4)
-        ui.text(surf, "GAME ARENA", (cx + 5, ty + 6), 84, ui.INK, bold=True, anchor="midtop", shadow=False)
-        ui.text(surf, "GAME ARENA", (cx, ty), 84, ui.ICE, bold=True, anchor="midtop")
+        ui.text(surf, "ULTIMATE SLOP SHOWDOWN", (cx + 5, ty + 6), 84, ui.INK, bold=True, anchor="midtop", shadow=False)
+        ui.text(surf, "ULTIMATE SLOP SHOWDOWN", (cx, ty), 84, ui.ICE, bold=True, anchor="midtop")
         sub = "MEDITERRANEAN UNIVERSITY STATION"
         w = ui.text_width(sub, 16, True) + 40
         tag = pygame.Rect(0, 0, w, 34)
@@ -88,6 +88,7 @@ class LaunchScreen(Screen):
             ui.text(surf, part, (jb.x + 36, jb.y + 62 + i * 26), 16, ui.ICE)
         self.addr.draw(surf)
         self.btn_join.draw(surf)
-        ui.text(surf, "ENTER CONNECTS", (jb.centerx, jb.bottom - 20), 12, ui.MUTED, bold=True, anchor="midtop")
+        ui.text(surf, "OR PRESS ENTER", (jb.centerx, self.btn_join.rect.bottom + 10), 12, ui.MUTED, bold=True,
+                anchor="midtop")
         ui.text(surf, "F11 FULLSCREEN", (cx, CANVAS_H - 30), 12, ui.MUTED, bold=True, anchor="midtop")
         self.draw_toasts(surf)

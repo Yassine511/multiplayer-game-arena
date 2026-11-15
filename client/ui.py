@@ -296,14 +296,9 @@ class Button:
 
 
 def clipboard_text():
-    """Text on the system clipboard, or "" (needs pygame 2.2+; never raises)."""
-    try:
-        if not pygame.scrap.get_init():
-            pygame.scrap.init()
-        t = pygame.scrap.get_text()
-        return t or ""
-    except Exception:
-        return ""
+    """Text on the system clipboard (or the path of a file copied in Explorer), "" if none."""
+    from client.osutil import clipboard_text as read
+    return read()
 
 
 class TextInput:

@@ -1,6 +1,7 @@
 """Admin view: the whole station and live scores, no movement and no answering."""
 import pygame
 
+from common import protocol as P
 from client import ui
 from client.assets import color_of
 from client.qr import make_qr_surface
@@ -12,10 +13,41 @@ class SpectatorScreen(GameScreen):
     spectator = True
     sprite_scale = 2
 
+    CONFIRM_S = 3.0
+
     def __init__(self, app, state=None, countdown=None):
         super().__init__(app, state=state, countdown=countdown)
         self._qr_for = None
         self._qr = None
+        self.btn_stop = ui.Button((12, 74, 250, 46), "STOP GAME", self.stop, color=ui.BTN_DANGER, size=16)
+        self.confirm_left = 0.0          # a first click arms the button; a second one within 3 s stops
+
+    def stop(self):
+        if self.confirm_left > 0:
+            self.confirm_left = 0.0
+            self.app.net.send(P.msg(P.STOP_GAME))
+            self.toasts.add("Stopping the game...", ui.WARN, 2)
+        else:
+            self.confirm_left = self.CONFIRM_S
+
+    def handle_event(self, e):
+        if not self.app.is_host or self.cutscenes.active:
+            return
+        self.btn_stop.handle(e)
+        if e.type == pygame.KEYDOWN and e.key == pygame.K_ESCAPE and self.confirm_left > 0:
+            self.confirm_left = 0.0
+
+    def update(self, dt):
+        super().update(dt)
+        self.confirm_left = max(0.0, self.confirm_left - dt)
+
+    def _draw_stop(self, surf):
+        if not self.app.is_host:
+            return
+        armed = self.confirm_left > 0
+        self.btn_stop.label = "CLICK AGAIN TO STOP" if armed else "STOP GAME"
+        self.btn_stop.size = 14 if armed else 16
+        self.btn_stop.draw(surf)
 
     def _draw_hud(self, surf):
         """Everything sits in the strip of space around the hull, so no room is covered."""
@@ -27,6 +59,7 @@ class SpectatorScreen(GameScreen):
         ui.panel(surf, tag, ui.PANEL, 10, ui.WARN, 240)
         ui.text(surf, "SPECTATING", (tag.x + 18, tag.y + 9), 16, ui.WARN, bold=True)
         ui.text(surf, f"{live} CONNECTED", (tag.x + 18, tag.y + 31), 12, ui.MUTED, bold=True)
+        self._draw_stop(surf)
 
         # room code and QR in the top-right corner of space
         if room:

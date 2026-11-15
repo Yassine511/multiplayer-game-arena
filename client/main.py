@@ -61,7 +61,7 @@ BACKDROPS = {
 class App:
     def __init__(self, args):
         pygame.init()
-        pygame.display.set_caption("Game Arena - Mediterranean University Station")
+        pygame.display.set_caption("Ultimate Slop Showdown - Mediterranean University Station")
         self.window, self.vsync, scaled = self._open_window()
         # SCALED: draw straight to the display and let the GPU scale it to the window
         self.canvas = self.window if scaled else pygame.Surface((CANVAS_W, CANVAS_H)).convert()
@@ -248,6 +248,12 @@ class App:
             self.banner = None
             self.me = self.room = None
             self.set_screen(LoginScreen(self, "Could not reconnect within 30 s - please log in again"))
+        elif t == P.RESUME_OK and m.get("version") != P.VERSION:
+            from client.screens.login import OLD_SERVER
+            self.banner = None
+            self.net.send(P.msg(P.LOGOUT))
+            self.me = self.room = self.questions = None
+            self.set_screen(LoginScreen(self, OLD_SERVER))
         elif t == P.RESUME_OK:
             self.banner = None
             self.on_login(m)
@@ -259,6 +265,11 @@ class App:
                 self.set_screen(RoomScreen(self))
             else:
                 self.set_screen(LobbyScreen(self))
+        elif t == P.ERROR and m.get("code") == P.E_VERSION and not isinstance(self.screen, LoginScreen):
+            self.banner = None
+            self.me = self.room = self.questions = None
+            self.net.stop_udp()
+            self.set_screen(LoginScreen(self, m.get("message")))
         elif t == P.ERROR and m.get("code") == P.E_RESUME_FAILED:
             self.banner = None
             self.me = self.room = None
@@ -336,7 +347,7 @@ class App:
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Multiplayer Game Arena client")
+    ap = argparse.ArgumentParser(description="Ultimate Slop Showdown client")
     ap.add_argument("--server", default=os.environ.get("ARENA_SERVER") or None,
                     help="server address: LAN IP (192.168.x.y) or Tailscale IP (100.x.y.z); "
                          "leave it out to get the host / join launcher")

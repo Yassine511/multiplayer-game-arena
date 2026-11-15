@@ -1,11 +1,13 @@
 """Host tools in the room: write questions one by one, or import a CSV file."""
+import glob
 import os
+import threading
 
 import pygame
 
 from common import config, qcsv
 from common import protocol as P
-from client import ui
+from client import osutil, ui
 from client.screens.base import CANVAS_H, CANVAS_W
 
 LETTERS = "ABCD"
@@ -27,20 +29,58 @@ def send_questions(app, questions, source, replace=False):
     return len(questions), trimmed
 
 
+def clean_path(path):
+    """Accept what people paste: a quoted path (Explorer's "Copy as path"), ~ or
+    %USERPROFILE%, or a file:// URI from a Linux file manager."""
+    path = path.strip().strip('"').strip("'").strip()
+    if path.startswith("file://"):
+        from urllib.parse import unquote, urlparse
+        path = unquote(urlparse(path).path)
+        if len(path) > 2 and path[0] == "/" and path[2] == ":":      # file:///C:/...
+            path = path[1:]
+    return os.path.normpath(os.path.expandvars(os.path.expanduser(path))) if path else ""
+
+
+def resolve_csv(path):
+    """Return (file path, None) or (None, reason). A folder holding exactly one .csv is accepted."""
+    path = clean_path(path)
+    if not path:
+        return None, "Type, paste or BROWSE for a .csv file"
+    if os.path.isdir(path):              # Windows answers "Permission denied" when asked to read a folder
+        found = sorted(glob.glob(os.path.join(path, "*.csv")))
+        if len(found) == 1:
+            return found[0], None
+        if not found:
+            return None, "That is a folder with no .csv in it - add the file name at the end"
+        return None, f"That folder has {len(found)} .csv files - add the file name at the end"
+    if not os.path.exists(path):
+        if os.path.exists(path + ".csv"):
+            return path + ".csv", None
+        folder = os.path.dirname(path)
+        if folder and not os.path.isdir(folder):
+            return None, f"No such folder: {folder}"
+        return None, f"No file named {os.path.basename(path)} in that folder"
+    return path, None
+
+
 def import_csv(app, path, replace=False):
     """Read a CSV and send it. Returns (message, colour) for a toast."""
-    path = path.strip().strip('"').strip("'")
-    if not path:
-        return "Type or paste the path of a .csv file", ui.WARN
+    path, problem = resolve_csv(path)
+    if problem:
+        return problem, ui.WARN if problem.startswith("Type") else ui.BAD
+    name = os.path.basename(path)
     try:
         questions, errors = qcsv.load(path)
+    except PermissionError:
+        return (f"Windows will not let the game read {name} - close it in Excel (or copy it to "
+                "your Desktop) and try again"), ui.BAD
     except OSError as e:
-        return f"Cannot open {os.path.basename(path) or path}: {e.strerror or e}", ui.BAD
+        return f"Cannot open {name}: {e.strerror or e}", ui.BAD
     if not questions:
         first = errors[0] if errors else "the file is empty"
         return f"No questions found ({first})", ui.BAD
-    sent, trimmed = send_questions(app, questions, os.path.basename(path), replace)
-    msg = f"Imported {sent} question{'s' if sent != 1 else ''} from {os.path.basename(path)}"
+    sent, trimmed = send_questions(app, questions, name, replace)
+    msg = f"Imported {sent} question{'s' if sent != 1 else ''} from {name}"
     if errors:
         msg += f"  -  {len(errors)} row(s) skipped: {errors[0]}"
     if trimmed:
@@ -173,8 +213,12 @@ class CsvImport:
         self.box = pygame.Rect(0, 0, 900, 470)
         self.box.center = (CANVAS_W // 2, CANVAS_H // 2)
         x, w = self.box.x + 40, self.box.w - 80
-        self.path = ui.TextInput((x, self.box.y + 110, w, 46), "C:\\Users\\me\\questions.csv", max_len=400,
+        self.path = ui.TextInput((x, self.box.y + 110, w - 176, 46), "C:\\Users\\me\\questions.csv", max_len=400,
                                  label="CSV FILE PATH")
+        self.btn_browse = ui.Button((x + w - 160, self.box.y + 108, 160, 50), "BROWSE...", self.browse,
+                                    color=ui.BTN_QUIET, size=16)
+        self._picking = False
+        self._picked = None          # set by the dialog thread, read by the game loop
         self.path.focused = True
         by = self.box.bottom - 80
         self.btn_add = ui.Button((self.box.right - 40 - 220, by, 220, 52), "ADD TO BANK", lambda: self.run(False),
@@ -192,8 +236,31 @@ class CsvImport:
     def drop(self, path):
         self.path.value = path
 
+    def browse(self):
+        if self._picking:
+            return
+        if not osutil.can_pick_file():
+            self.toasts.add("No file dialog on this system - paste the path or drop the file here", ui.WARN, 4)
+            return
+        self._picking = True
+
+        def work():
+            self._picked = osutil.pick_file("Choose a question file (.csv)")
+            self._picking = False
+        threading.Thread(target=work, name="file-dialog", daemon=True).start()
+
+    def _take_pick(self):
+        picked, self._picked = self._picked, None
+        if picked:
+            self.path.value = picked
+            self.path.focused = True
+        elif picked == "":
+            self.toasts.add("Could not open the file dialog - paste the path instead", ui.WARN, 4)
+
     def handle(self, e):
-        for b in (self.btn_add, self.btn_replace, self.btn_close):
+        if self._picking:                    # the dialog is open: leave the modal alone meanwhile
+            return
+        for b in (self.btn_add, self.btn_replace, self.btn_close, self.btn_browse):
             if b.handle(e):
                 return
         if e.type == pygame.KEYDOWN and e.key == pygame.K_ESCAPE:
@@ -205,21 +272,26 @@ class CsvImport:
         self.path.handle(e)
 
     def draw(self, surf):
+        if self._picked is not None:
+            self._take_pick()
         ui.dim(surf, 175)
         b = self.box
         ui.panel(surf, b, ui.PANEL, 20, ui.CYAN, 250)
         ui.hazard(surf, (b.x + 30, b.y + 26, 40, 22))
         ui.text(surf, "IMPORT A CSV", (b.x + 84, b.y + 22), 24, ui.CYAN, bold=True)
         self.path.draw(surf)
+        self.btn_browse.label = "OPEN..." if self._picking else "BROWSE..."
+        self.btn_browse.draw(surf)
         y = self.path.rect.bottom + 24
         tips = [("FORMAT", "question, choice A, choice B, choice C, choice D, answer, topic (optional)"),
                 ("ANSWER", "1-4, A-D, or the exact text of the right choice"),
-                ("TIP", "drag the .csv file onto this window - a header row is fine - ; or , separators"),
+                ("TIP", "BROWSE, CTRL+V a path (or a file copied in Explorer), or drag the file onto the window"),
                 ("SAMPLE", "sample_questions.csv next to the game")]
         for label, what in tips:
             ui.text(surf, label, (b.x + 40, y), 12, ui.WARN, bold=True)
-            for i, part in enumerate(ui.wrap(what, 16, b.w - 200)[:2]):
-                ui.text(surf, part, (b.x + 150, y - 2 + i * 22), 16, ui.ICE)
-            y += 46
+            parts = ui.wrap(what, 16, b.w - 190)[:2]
+            for i, part in enumerate(parts):
+                ui.text(surf, part, (b.x + 150, y - 2 + i * 24), 16, ui.ICE)
+            y += 24 * len(parts) + 20
         for btn in (self.btn_close, self.btn_replace, self.btn_add):
             btn.draw(surf)

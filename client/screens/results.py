@@ -77,8 +77,9 @@ class ResultsScreen(Screen):
                 pygame.draw.polygon(surf, ui.INK, pts, 2)
 
     def draw(self, surf):
-        ui.text(surf, "ALL TERMINALS CRACKED" if self.reason == "all_cracked" else "TIME IS UP", (40, 30), 44,
-                ui.ICE, bold=True)
+        title = {"all_cracked": "ALL TERMINALS CRACKED", "stopped": "STOPPED BY THE HOST"}.get(self.reason,
+                                                                                              "TIME IS UP")
+        ui.text(surf, title, (40, 30), 44, ui.ICE, bold=True)
         if self.winner:
             ui.text(surf, f"{str(self.winner).upper()} WINS THE STATION", (44, 88), 20, ui.WARN, bold=True)
         else:

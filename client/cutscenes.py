@@ -174,91 +174,239 @@ class Scene:
                                               0, None)
 
 
-# --- Gojo: Domain Expansion - Infinite Void ------------------------------------------------------------
+# --- Gojo: Domain Expansion - Infinite Void (Muryokusho) ------------------------------------------------
 class InfiniteVoid(Scene):
-    duration = 4.0
-    end_card_at = 3.0
-    cues = ((0.0, "whoosh"), (0.45, "void"), (1.25, "hit"))
-    WORDS = ["SEE", "FEEL", "KNOW", "EVERYTHING", "SYN", "ACK", "INFINITY", "1011010", "TTL", "FOREVER",
-             "NEVER ENDING", "TCP/IP", "ALL AT ONCE", "0xFFFF", "WHY", "NOTHING"]
+    """The beats of the anime: the hand seal (middle finger crossed over the index), the
+    blindfold coming off on the Six Eyes, the barrier closing everything in black, then the
+    void itself - an endless cosmos round a blinding ring of light - where every target
+    stands frozen while infinite information pours into them. Gojo alone moves."""
+    duration = 4.9
+    end_card_at = 3.9
+    cues = ((0.0, "whoosh"), (0.55, "blip"), (1.0, "void"), (1.45, "hit"), (2.9, "whoosh"))
+    SKIN, LINE = (250, 222, 200), (40, 26, 40)
+    RING = (CX, 175)
+    UNIFORM = (22, 24, 44)
+    INFO = ["SEE", "HEAR", "FEEL", "KNOW", "EVERYTHING", "FOREVER", "1011010", "SYN", "ACK", "TTL=INF",
+            "0xFFFF", "ALL AT ONCE", "NEVER ENDS", "WHY", "MURYOKUSHO", "INFINITY"]
 
     def setup(self):
         r = self.rng
         self.stars = [(r.uniform(0, math.tau), r.uniform(0.15, 1.0), r.uniform(0, 1), r.choice(
-            [(255, 255, 255), (160, 220, 255), (190, 140, 255), (120, 160, 255)])) for _ in range(260)]
-        self.frags = [(r.choice(self.WORDS), r.randrange(40, W - 40), r.randrange(70, H - 70), r.uniform(0, 3))
-                      for _ in range(40)]
+            [(255, 255, 255), (160, 220, 255), (190, 140, 255), (120, 160, 255)])) for _ in range(240)]
+        self.dust = [(r.uniform(0, W), r.uniform(0, H), r.uniform(1, 3), r.uniform(0, 6)) for _ in range(120)]
+        n = max(1, min(6, len(self.ctx.victims)))
+        left = (n + 1) // 2                                 # either side of Gojo, who stands in the middle
+        xs = [lerp(130, CX - 230, (i + 0.5) / left) for i in range(left)]
+        xs += [lerp(CX + 230, W - 130, (i + 0.5) / (n - left)) for i in range(n - left)]
+        self.spots = [(int(x), H - 70 - (40 if i % 2 else 0)) for i, x in enumerate(xs)]
+        self.streams = [[(r.uniform(0, math.tau), r.uniform(0, 1), r.choice(self.INFO)) for _ in range(9)]
+                        for _ in range(n)]
+
+    def shake(self):
+        amp = 10 * (seg(self.t, 1.45, 1.5) - seg(self.t, 1.5, 1.9))
+        if amp <= 0:
+            return 0, 0
+        return int(self.rng.uniform(-amp, amp)), int(self.rng.uniform(-amp, amp))
+
+    # -- beat 1: the hand seal --------------------------------------------------------------
+    PX_HAND = 4                         # the hand is drawn at 1/4 size and blown up: chunky pixels
+
+    @classmethod
+    def _seal_sprite(cls):
+        """Right hand, palm to the camera: middle finger crossed over the index, ring and
+        pinky folded down, thumb holding them. Built once at low resolution."""
+        if getattr(cls, "_seal_img", None) is not None:
+            return cls._seal_img
+        skin, shade, line, nail = (252, 214, 186), (222, 168, 144), (70, 36, 44), (255, 236, 228)
+        img = pygame.Surface((72, 112), pygame.SRCALPHA)
+        pygame.draw.rect(img, line, (8, 92, 56, 20))                             # sleeve
+        pygame.draw.rect(img, cls.UNIFORM, (9, 93, 54, 19))
+        pygame.draw.line(img, (60, 66, 110), (9, 95), (62, 95))
+        pygame.draw.rect(img, line, (19, 80, 34, 16))                            # wrist
+        pygame.draw.rect(img, skin, (20, 80, 32, 14))
+        palm = pygame.Rect(12, 50, 48, 42)
+        pygame.draw.rect(img, line, palm.inflate(2, 2), border_radius=11)
+        pygame.draw.rect(img, skin, palm, border_radius=10)
+
+        def finger(base, tip, wb, wt):
+            dx, dy = tip[0] - base[0], tip[1] - base[1]
+            ln = math.hypot(dx, dy)
+            nx, ny = -dy / ln, dx / ln
+            for col, grow in ((line, 1), (skin, 0)):
+                b2, t2 = wb / 2 + grow, wt / 2 + grow
+                pygame.draw.polygon(img, col, [(base[0] + nx * b2, base[1] + ny * b2),
+                                               (tip[0] + nx * t2, tip[1] + ny * t2),
+                                               (tip[0] - nx * t2, tip[1] - ny * t2),
+                                               (base[0] - nx * b2, base[1] - ny * b2)])
+                pygame.draw.circle(img, col, (round(tip[0]), round(tip[1])), round(t2))
+            for f in (0.35, 0.65):                                               # knuckle creases
+                cx, cy = base[0] + dx * f, base[1] + dy * f
+                pygame.draw.line(img, shade, (cx - nx * wt * 0.3, cy - ny * wt * 0.3),
+                                 (cx + nx * wt * 0.3, cy + ny * wt * 0.3))
+            ux, uy = dx / ln, dy / ln                                            # nail near the tip
+            pygame.draw.circle(img, nail, (round(tip[0] - ux * 2), round(tip[1] - uy * 2)), max(1, round(wt / 4)))
+
+        finger((19, 60), (31, 12), 12, 10)                                       # index, leaning right
+        finger((32, 60), (19, 4), 12, 10)                                        # middle, crossed over it
+        pygame.draw.rect(img, skin, palm.inflate(-4, -10).move(0, 4))            # hide the finger roots
+        for x in (38, 49):                                                       # ring + pinky folded down
+            r = pygame.Rect(x, 44, 11, 20)
+            pygame.draw.rect(img, line, r.inflate(2, 2), border_radius=5)
+            pygame.draw.rect(img, skin, r, border_radius=5)
+            pygame.draw.line(img, shade, (x + 2, 52), (x + 8, 52))
+            pygame.draw.rect(img, nail, (x + 3, 58, 5, 4))
+        finger((12, 84), (46, 66), 12, 10)                                       # thumb across them
+        pygame.draw.line(img, shade, (20, 76), (36, 72))                         # palm crease
+        pygame.draw.line(img, shade, (14, 58), (14, 74))                         # palm edge shading
+        cls._seal_img = pygame.transform.scale(img, (72 * cls.PX_HAND, 112 * cls.PX_HAND))
+        return cls._seal_img
+
+    def _hand_seal(self, s, t):
+        k = ease_out(seg(t, 0.0, 0.35))
+        img = self._seal_sprite()
+        r = img.get_rect(midbottom=(CX + 190, H + int((1 - k) * 420)))
+        if t > 0.3:
+            r.x += int(math.sin(t * 40) * 2)                                     # cursed energy trembles
+        glow(s, (90, 170, 255), (r.centerx, r.y + 140), 260, 80)
+        s.blit(img, r)
+
+    # -- beat 2: the Six Eyes ---------------------------------------------------------------
+    def _six_eyes(self, s, t):
+        band = pygame.Rect(0, CY - 120, W, 240)
+        pygame.draw.rect(s, self.SKIN, band)
+        lift = ease_out(seg(t, 0.5, 0.7))                                                # blindfold slides up
+        open_k = ease_out(seg(t, 0.62, 0.82))
+        for ex in (CX - 230, CX + 230):
+            eye = pygame.Rect(0, 0, 300, max(4, int(130 * open_k)))
+            eye.center = (ex, CY + 10)
+            pygame.draw.ellipse(s, self.LINE, eye.inflate(10, 10))
+            pygame.draw.ellipse(s, (245, 250, 255), eye)
+            clip = s.get_clip()
+            s.set_clip(eye)
+            ix = ex + int(math.sin(t * 3) * 6)
+            for rr, col in ((62, (20, 90, 220)), (54, (40, 150, 255)), (40, (120, 220, 255)), (24, (200, 245, 255))):
+                pygame.draw.circle(s, col, (ix, CY + 10), rr)
+            for a in range(0, 360, 20):                                                  # the crystalline iris
+                rad = math.radians(a + t * 40)
+                pygame.draw.line(s, (230, 250, 255), (ix + math.cos(rad) * 18, CY + 10 + math.sin(rad) * 18),
+                                 (ix + math.cos(rad) * 52, CY + 10 + math.sin(rad) * 52), 1)
+            pygame.draw.circle(s, (10, 20, 60), (ix, CY + 10), 12)
+            pygame.draw.circle(s, (255, 255, 255), (ix - 18, CY - 8), 8)
+            s.set_clip(clip)
+            for i in range(9):                                                           # white lashes
+                x = eye.x + 20 + i * 32
+                pygame.draw.line(s, (255, 255, 255), (x, eye.y + 4), (x - 6 + i, eye.y - 22), 4)
+            glow(s, (110, 200, 255), (ex, CY + 10), 170, int(110 * open_k))
+        for i in range(-3, 18):                                                          # white hair falling over
+            x = i * 80 + int(math.sin(t * 2 + i) * 6)
+            pygame.draw.polygon(s, (236, 240, 250), [(x - 40, band.y), (x + 40, band.y), (x + 10, band.y + 70)])
+            pygame.draw.polygon(s, (200, 206, 226), [(x + 10, band.y), (x + 40, band.y), (x + 10, band.y + 70)])
+        if lift < 1:                                                                     # the blindfold
+            by = int(band.y + 30 - lift * 190)
+            pygame.draw.rect(s, (12, 12, 20), (0, by, W, 150))
+            pygame.draw.line(s, (40, 40, 60), (0, by + 6), (W, by + 6), 3)
+        ui.text(s, "THE SIX EYES", (CX, band.bottom + 30), 16, (180, 220, 255), bold=True, anchor="center",
+                alpha=255 * open_k)
+
+    # -- beat 4: the void -------------------------------------------------------------------
+    def _void(self, s, t):
+        s.fill((3, 2, 10))
+        for x, y, sz, ph in self.dust:
+            a = 0.5 + 0.5 * math.sin(t * 2 + ph)
+            pygame.draw.rect(s, ui.mix((3, 2, 10), (150, 170, 255), a * 0.6), (x, y, sz, sz))
+        hx, hy = self.RING                                                               # the ring of light
+        speed = 0.35 + 1.4 * seg(t, 1.45, 2.2)
+        for ang, sp, off, col in self.stars:                                             # pouring out of it
+            d = (off + t * sp * speed) % 1.0
+            r0 = 100 + d * d * 760
+            r1 = r0 + 6 + 80 * d * sp * speed
+            x0, y0 = hx + math.cos(ang) * r0, hy + math.sin(ang) * r0 * 0.7
+            x1, y1 = hx + math.cos(ang) * r1, hy + math.sin(ang) * r1 * 0.7
+            pygame.draw.line(s, ui.mix((3, 2, 10), col, clamp(d * 1.6)), (x0, y0), (x1, y1), 2 if d > 0.5 else 1)
+        pulse = 6 * math.sin(t * 4)
+        glow(s, (140, 180, 255), (hx, hy), 270 + pulse, 120, 6)
+        disk = pygame.Rect(0, 0, 540, 46)
+        disk.center = (hx, hy)
+        pygame.draw.ellipse(s, (170, 200, 255), disk.inflate(26, 14))                    # far side of the disc
+        pygame.draw.ellipse(s, (250, 252, 255), disk)
+        pygame.draw.circle(s, (240, 246, 255), (hx, hy), 96 + int(pulse))               # light bent round the hole
+        pygame.draw.circle(s, (0, 0, 0), (hx, hy), 80)
+        clip = s.get_clip()                                                              # near side crosses in front
+        s.set_clip(pygame.Rect(0, hy, W, 50))
+        pygame.draw.ellipse(s, (250, 252, 255), disk)
+        s.set_clip(clip)
+        pygame.draw.ellipse(s, (120, 160, 255), disk, 2)
+
+    def _victims(self, s, t):
+        ctx = self.ctx
+        hx, hy = self.RING
+        for i, v in enumerate(ctx.victims[:len(self.spots)]):
+            x, y = self.spots[i]
+            y += int(math.sin(t * 1.3 + i) * 6)                                          # drifting, weightless
+            for ang, ph, word in self.streams[i]:                                        # information pouring in
+                k = (t * 1.6 + ph) % 1.0
+                src = (hx + math.cos(ang) * 270, hy + math.sin(ang) * 23)
+                head = (x, y - 100)
+                px, py = lerp(src[0], head[0], k), lerp(src[1], head[1], k)
+                pygame.draw.line(s, ui.mix((3, 2, 10), (120, 190, 255), 0.35), src, head, 1)
+                pygame.draw.rect(s, (220, 240, 255), (px - 2, py - 2, 4, 4))
+                if k > 0.7:
+                    ui.text(s, word, (px, py - 12), 12, (150, 210, 255), bold=True, anchor="center", shadow=False,
+                            alpha=255 * (1 - k) * 3)
+            ctx.assets.draw_character(s, x, y, ctx.victim_character(v), 104, "down", False, False, 0,
+                                      v.get("color"))                                    # frozen: greyed, still
+            pygame.draw.ellipse(s, (180, 220, 255), (x - 40, y - 4, 80, 12), 1)
+            name = "YOU" if v["id"] == ctx.me_id else str(v["name"]).upper()
+            ui.text(s, ui.fit(name, 12, 140, True), (x, y - 124), 12, (200, 220, 255), bold=True, anchor="center")
+            if int(t * 3 + i) % 2:
+                ui.text(s, "...", (x + 30, y - 108), 12, (200, 220, 255), bold=True, anchor="center")
 
     def render(self, s):
         t = self.t
-        s.fill((4, 2, 12))
-        if t < 0.55:                                    # the domain closes over everything
-            k = ease_in(seg(t, 0.05, 0.55))
-            s.fill((20, 14, 60))
-            pygame.draw.circle(s, (4, 2, 12), (CX, CY), int(k * 820))
-            pygame.draw.circle(s, (150, 120, 255), (CX, CY), int(k * 820), 6)
-        # warp streaks pouring out of the centre
-        speed = 0.35 + 1.6 * seg(t, 0.5, 1.4)
-        maxr = 760
-        for ang, sp, off, col in self.stars:
-            d = ((off + t * sp * speed) % 1.0)
-            r0 = d * d * maxr
-            r1 = r0 + 8 + 90 * d * sp * speed
-            x0, y0 = CX + math.cos(ang) * r0, CY + math.sin(ang) * r0 * 0.75
-            x1, y1 = CX + math.cos(ang) * r1, CY + math.sin(ang) * r1 * 0.75
-            pygame.draw.line(s, ui.mix((10, 6, 30), col, clamp(d * 1.6)), (x0, y0), (x1, y1), 2 if d > 0.5 else 1)
-        # galaxy rings
-        for i in range(7):
-            ph = (t * 0.6 + i / 7) % 1.0
-            rr = int(40 + ph * 640)
-            col = ui.mix((140, 80, 255), (40, 160, 255), i / 6)
-            ring = pygame.Rect(0, 0, rr * 2, int(rr * 1.2))
-            ring.center = (CX, CY)
-            pygame.draw.ellipse(s, ui.mix((4, 2, 12), col, 0.5 * (1 - ph)), ring, 2)
-        # information overload
-        for word, x, y, ph in self.frags:
-            a = 0.5 + 0.5 * math.sin(t * 9 + ph * 7)
-            if a > 0.55 and t > 0.6:
-                ui.text(s, word, (x, y), 14, ui.mix((4, 2, 12), (120, 200, 255), a * 0.7), bold=True, anchor="center",
-                        shadow=False)
-        # the eye
-        open_k = ease_out(seg(t, 0.8, 1.2))
-        if open_k > 0:
-            glow(s, (120, 170, 255), (CX, CY - 10), 190 + 20 * math.sin(t * 5), 90)
-            eh = max(2, int(130 * open_k))
-            eye = pygame.Rect(0, 0, 330, eh)
-            eye.center = (CX, CY - 10)
-            pygame.draw.ellipse(s, (236, 244, 255), eye)
-            clip = s.get_clip()
-            s.set_clip(eye)
-            ix = CX + int(math.sin(t * 2.3) * 22)
-            pygame.draw.circle(s, (30, 120, 255), (ix, CY - 10), 56)
-            pygame.draw.circle(s, (110, 220, 255), (ix, CY - 10), 56, 8)
-            pygame.draw.circle(s, (160, 240, 255), (ix, CY - 10), 40, 2)
-            pygame.draw.circle(s, (6, 10, 40), (ix, CY - 10), 20)
-            pygame.draw.circle(s, (255, 255, 255), (ix - 16, CY - 28), 9)
-            s.set_clip(clip)
-            pygame.draw.ellipse(s, (20, 30, 90), eye, 4)
-        # caster, small and calm under it all
-        if t > 0.55:
-            self.caster(s, CX, H - 30, 170)
-        # titles
-        if t > 0.25:
-            a = 255 * seg(t, 0.25, 0.5)
-            big_text(s, "DOMAIN EXPANSION", (CX, 100), 30, (200, 210, 255), alpha=a)
-        if t > 1.2:
-            k = pop(t, 1.2)
-            ab = 4 if int(t * 20) % 3 else 8
-            stamp_text(s, "INFINITE VOID", (CX - ab, H - 250), 70, (255, 40, 120), k)
-            stamp_text(s, "INFINITE VOID", (CX + ab, H - 250), 70, (40, 220, 255), k)
-            stamp_text(s, "INFINITE VOID", (CX, H - 250), 70, (255, 255, 255), k)
-        if t > 1.7:
-            ui.text(s, f"{self.ctx.name.upper()} SHOWS THEM EVERYTHING. THEY FORGET {self.ctx.damage} POINTS.",
-                    (CX, H - 190), 14, (170, 190, 255), bold=True, anchor="center",
-                    alpha=255 * seg(t, 1.7, 2.0))
-        letterbox(s, seg(t, 0.4, 0.8))
-        if 1.18 < t < 1.3:
-            wash(s, (255, 255, 255), 200 * (1 - seg(t, 1.18, 1.3)))
+        if t < 0.5:
+            s.fill((8, 10, 30))
+            self.caster(s, 330, H - 30, 300, "right")
+            self._hand_seal(s, t)
+            ui.text(s, "RYOIKI TENKAI", (CX, 70), 22, (170, 200, 255), bold=True, anchor="center",
+                    alpha=255 * seg(t, 0.1, 0.3))
+        elif t < 1.0:
+            s.fill((8, 10, 30))
+            self._six_eyes(s, t)
+        elif t < 1.45:                                                                    # the barrier closes
+            s.fill((8, 10, 30))
+            self.caster(s, CX, H - 40, 260)
+            k = ease_in(seg(t, 1.0, 1.42))
+            rad = int(40 + k * 900)
+            pygame.draw.circle(s, (0, 0, 0), (CX, CY), rad)
+            for j in range(18):                                                          # ink edge
+                a = j / 18 * math.tau + t * 2
+                pygame.draw.circle(s, (0, 0, 0), (int(CX + math.cos(a) * rad), int(CY + math.sin(a) * rad)),
+                                   26 + (j * 7) % 20)
+            pygame.draw.circle(s, (120, 150, 255), (CX, CY), rad, 3)
+            big_text(s, "DOMAIN EXPANSION", (CX, 90), 34, (220, 230, 255), alpha=255 * seg(t, 1.05, 1.2))
+        else:
+            self._void(s, t)
+            self._victims(s, t)
+            glow(s, (110, 200, 255), (CX, H - 140), 120, 60)
+            self.caster(s, CX, H - 40, 200)                                              # the only one who moves
+            k = pop(t, 1.5)
+            if k:
+                ab = 4 if int(t * 20) % 3 else 7
+                stamp_text(s, "INFINITE VOID", (CX - ab, 318), 64, (255, 40, 120), k)
+                stamp_text(s, "INFINITE VOID", (CX + ab, 318), 64, (40, 220, 255), k)
+                stamp_text(s, "INFINITE VOID", (CX, 318), 64, (255, 255, 255), k)
+            if t > 1.75:
+                ui.text(s, "MURYOKUSHO", (CX, 366), 16, (170, 200, 255), bold=True, anchor="center",
+                        alpha=255 * seg(t, 1.75, 2.0))
+            if t > 2.1:
+                ui.text(s, "INFINITE INFORMATION. NONE OF THEM CAN MOVE.", (CX, 400), 14, (200, 220, 255),
+                        bold=True, anchor="center", alpha=255 * seg(t, 2.1, 2.4))
+            if t > 2.8:
+                ui.text(s, f"0.2 SECONDS INSIDE  -  {self.ctx.damage} POINTS GONE", (CX, 424), 14, (150, 200, 255),
+                        bold=True, anchor="center", alpha=255 * seg(t, 2.8, 3.1))
+        letterbox(s, seg(t, 0.0, 0.3), 40)
+        if 1.42 < t < 1.6:
+            wash(s, (255, 255, 255), 230 * (1 - seg(t, 1.42, 1.6)))
 
 
 # --- Sukuna: Domain Expansion - Malevolent Kitchen -----------------------------------------------------
@@ -371,7 +519,35 @@ class Kamehameha(Scene):
     end_card_at = 3.05
     cues = ((0.0, "charge"), (1.9, "beam"), (2.05, "boom"))
 
-    HAND = (380, 470)
+    SKIN, BAND, LINE = (250, 206, 168), (40, 70, 170), (50, 24, 30)
+
+    def _arms(self, s, shoulder, hands):
+        """Both arms from the shoulder to the cupped hands; drawn at half size, doubled."""
+        k = 2
+        ox, oy = int(min(shoulder[0], hands[0]) - 60), int(min(shoulder[1], hands[1]) - 60)
+        w = int(abs(shoulder[0] - hands[0]) + 120) // k + 2
+        h = int(abs(shoulder[1] - hands[1]) + 120) // k + 2
+        img = pygame.Surface((w, h), pygame.SRCALPHA)
+        sx, sy = (shoulder[0] - ox) / k, (shoulder[1] - oy) / k
+        hx, hy = (hands[0] - ox) / k, (hands[1] - oy) / k
+        for dy in (-4, 4):                                                       # two arms, slightly apart
+            a, b = (sx, sy + dy * 0.5), (hx - 6, hy + dy)
+            pygame.draw.line(img, self.LINE, a, b, 12)
+            pygame.draw.line(img, self.SKIN, a, b, 9)
+            wx, wy = lerp(a[0], b[0], 0.78), lerp(a[1], b[1], 0.78)            # blue wristbands
+            pygame.draw.circle(img, self.BAND, (round(wx), round(wy)), 4)
+        for sign in (-1, 1):                                                     # cupped palms, heels together
+            palm = pygame.Rect(0, 0, 11, 10)
+            palm.center = (round(hx - 2), round(hy + sign * 5))
+            pygame.draw.rect(img, self.LINE, palm.inflate(2, 2), border_radius=3)
+            pygame.draw.rect(img, self.SKIN, palm, border_radius=3)
+            for f in range(4):                                                   # fingers curled round the orb
+                ang = math.radians(sign * (25 + f * 13))
+                base = (palm.right - 2, palm.centery + sign * (f - 1.5) * 1.6)
+                tip = (base[0] + math.cos(ang) * 8, base[1] + math.sin(ang) * 8)
+                pygame.draw.line(img, self.LINE, base, tip, 4)
+                pygame.draw.line(img, self.SKIN, base, tip, 2)
+        s.blit(pygame.transform.scale(img, (w * k, h * k)), (ox, oy))
 
     def setup(self):
         r = self.rng
@@ -395,11 +571,22 @@ class Kamehameha(Scene):
         pygame.draw.rect(s, (30, 26, 40), (0, H - 110, W, 110))     # rocky ground
         for i in range(0, W, 60):
             pygame.draw.polygon(s, (44, 38, 56), [(i, H - 110), (i + 30, H - 128), (i + 60, H - 110)])
-        hx, hy = self.HAND
         charge = ease_out(seg(t, 0.0, 1.9))
-        # aura around the caster
-        glow(s, (150, 210, 255), (230, 480), 150 + 20 * math.sin(t * 20), 70)
-        self.caster(s, 230, H - 100, 250, "right", moving=t < 1.9)
+        glow(s, (150, 210, 255), (230, 480), 150 + 20 * math.sin(t * 20), 70)       # aura
+        body = self.caster(pygame.Surface((1, 1)), 230, H - 100, 250, "right")    # where the sprite lands
+        shoulder = (body.centerx + body.w * 0.02, body.top + body.h * 0.60)       # chibi: big head, low shoulders
+        hip = (body.centerx - body.w * 0.34, body.top + body.h * 0.74)            # cupped at his side
+        front = (body.centerx + body.w * 0.66, body.top + body.h * 0.60)          # arms thrust forward
+        start = (body.centerx + body.w * 0.22, body.top + body.h * 0.72)
+        wind = ease_out(seg(t, 0.0, 0.25))                                         # hands pulled back
+        thrust = ease_out(seg(t, 1.82, 1.95))                                      # ... then pushed out
+        hx = lerp(lerp(start[0], hip[0], wind), front[0], thrust)
+        hy = lerp(lerp(start[1], hip[1], wind), front[1], thrust)
+        if t < 1.9:
+            hx += math.sin(t * 50) * 2 * seg(t, 0.6, 1.8)                          # straining
+        hx, hy = int(hx), int(hy)
+        self.caster(s, 230, H - 100, 250, "right")
+        self._arms(s, shoulder, (hx, hy))
         # particles converging on the hands
         if t < 1.95:
             for ang, dist, ph in self.parts:
@@ -408,7 +595,7 @@ class Kamehameha(Scene):
                 x, y = hx + math.cos(ang) * d, hy + math.sin(ang) * d
                 pygame.draw.rect(s, (200, 240, 255), (x, y, 3, 3))
         # the orb
-        rad = 10 + 60 * charge
+        rad = 8 + 22 * charge if t < 1.85 else 70        # a ball in his hands, then the blast
         if t < 3.0:
             glow(s, (90, 190, 255), (hx, hy), rad * 2.4, 160)
             pygame.draw.circle(s, (170, 230, 255), (hx, hy), int(rad))
@@ -422,6 +609,7 @@ class Kamehameha(Scene):
             for col, f in (((60, 150, 255), 1.0), ((140, 210, 255), 0.7), ((230, 250, 255), 0.42), ((255, 255, 255), 0.2)):
                 pygame.draw.rect(s, col, (hx, hy - hh * f / 2, end - hx, hh * f))
             pygame.draw.circle(s, (230, 250, 255), (int(end), hy), int(hh * 0.7))
+            self._arms(s, shoulder, (hx, hy))                                    # hands stay over the beam
             for i in range(12):                                     # crackle
                 x = hx + (i * 97 + t * 1500) % max(1, end - hx)
                 pygame.draw.line(s, (255, 255, 255), (x, hy - hh / 2 - 8), (x + 30, hy - hh / 2 - 22), 2)
@@ -721,85 +909,320 @@ class CodeReview(Scene):
         letterbox(s, seg(t, 0.0, 0.3), 30)
 
 
-# --- Sam Altman: steal their RAM -------------------------------------------------------------------------------
-class RamHeist(Scene):
-    duration = 4.1
-    end_card_at = 3.15
-    cues = ((0.0, "blip"), (1.0, "whoosh"), (1.3, "whoosh"), (1.6, "whoosh"), (1.9, "whoosh"), (2.6, "cash"))
+# --- Epstein: summons his island ------------------------------------------------------------------------------
+class IslandSummon(Scene):
+    """The sea boils, the island rises - palms, the striped temple with its gold dome - a private
+    jet circles in, the wave it throws up swamps everyone else, and the case file gets redacted."""
+    duration = 4.6
+    end_card_at = 3.6
+    cues = ((0.0, "charge"), (0.7, "boom"), (1.75, "whoosh"), (2.2, "hit"), (2.9, "slash"))
+    SEA_Y = 430
 
     def setup(self):
         r = self.rng
         n = max(1, min(6, len(self.ctx.victims)))
-        self.cols = [int(120 + (W - 240) * (i + 0.5) / n) for i in range(n)]
+        self.rafts = [int(330 + (W - 420) * (i + 0.5) / n) for i in range(n)]
+        self.spray = [(r.uniform(-1, 1), r.uniform(-1.6, -0.6), r.uniform(120, 420)) for _ in range(70)]
+        self.waves = [(r.uniform(0, W), r.uniform(self.SEA_Y + 8, H), r.uniform(20, 60)) for _ in range(40)]
+        self.redact = [r.uniform(0.45, 0.95) for _ in range(7)]
+
+    def shake(self):
+        amp = 5 * seg(self.t, 0.6, 0.8) * (1 - seg(self.t, 1.5, 1.8)) + 9 * (seg(self.t, 2.2, 2.25) - seg(self.t, 2.25, 2.6))
+        if amp <= 0:
+            return 0, 0
+        return int(self.rng.uniform(-amp, amp)), int(self.rng.uniform(-amp, amp))
+
+    def _sky(self, s, t):
+        dusk = seg(t, 0.4, 1.4)                         # the light turns as the island arrives
+        for i in range(14):
+            c0 = ui.mix((255, 170, 90), (250, 120, 120), i / 13)
+            c1 = ui.mix((40, 20, 70), (140, 50, 90), i / 13)
+            pygame.draw.rect(s, ui.mix(c0, c1, dusk), (0, i * self.SEA_Y // 14, W, self.SEA_Y // 14 + 1))
+        pygame.draw.circle(s, ui.mix((255, 230, 140), (255, 120, 90), dusk), (W - 230, self.SEA_Y - 40), 80)
+
+    def _palm(self, s, x, y, h, lean, t):
+        top = (x + lean, y - h)
+        pts = [(x + lean * (i / 6) ** 2, y - h * i / 6) for i in range(7)]
+        pygame.draw.lines(s, (60, 36, 20), False, pts, 12)
+        pygame.draw.lines(s, (130, 86, 46), False, pts, 8)
+        sway = math.sin(t * 2 + x) * 6
+        for a in (-150, -110, -60, -20, 20, 60):
+            rad = math.radians(a)
+            tip = (top[0] + math.cos(rad) * 70 + sway, top[1] + math.sin(rad) * 34 + 26)
+            mid = ((top[0] + tip[0]) / 2, (top[1] + tip[1]) / 2 - 16)
+            pygame.draw.polygon(s, (24, 110, 50), [top, mid, tip, (mid[0], mid[1] + 14)])
+        pygame.draw.circle(s, (90, 60, 30), (int(top[0]), int(top[1]) + 6), 8)
+
+    def _island(self, s, t):
+        k = ease_out(seg(t, 0.6, 1.6))
+        if k <= 0:
+            return
+        base = self.SEA_Y + 20 + int((1 - k) * 260)
+        cx = CX + 120
+        pygame.draw.ellipse(s, (232, 210, 150), (cx - 380, base - 70, 760, 150))          # sand
+        pygame.draw.polygon(s, (40, 120, 60), [(cx - 300, base - 30), (cx - 180, base - 130), (cx - 20, base - 170),
+                                               (cx + 150, base - 140), (cx + 300, base - 40)])   # hill
+        pygame.draw.polygon(s, (30, 96, 50), [(cx + 20, base - 168), (cx + 150, base - 140), (cx + 300, base - 40),
+                                              (cx + 120, base - 60)])
+        tx, ty = cx - 40, base - 168                                                       # the temple
+        body = pygame.Rect(tx - 70, ty - 90, 140, 90)
+        pygame.draw.rect(s, (245, 245, 250), body)
+        for i in range(0, 140, 20):
+            pygame.draw.rect(s, (60, 110, 200), (body.x + i, body.y, 10, body.h))
+        pygame.draw.rect(s, (30, 30, 50), body, 3)
+        pygame.draw.rect(s, (30, 30, 60), (tx - 18, ty - 46, 36, 46))                      # door
+        dome = pygame.Rect(tx - 60, ty - 150, 120, 120)
+        clip = s.get_clip()
+        s.set_clip(pygame.Rect(0, dome.y, W, dome.h // 2))                                 # top half only
+        pygame.draw.ellipse(s, (240, 190, 60), dome)
+        pygame.draw.ellipse(s, (180, 130, 30), dome, 3)
+        s.set_clip(clip)
+        pygame.draw.rect(s, (245, 245, 250), (body.x, body.y - 4, body.w, 6))
+        pygame.draw.line(s, (240, 190, 60), (tx, ty - 150), (tx, ty - 176), 3)
+        for px, h, lean in ((cx - 250, 150, -30), (cx - 170, 190, 20), (cx + 120, 170, 34), (cx + 230, 140, -16)):
+            self._palm(s, px, base - 40, h, lean, t)
+        if k < 1:                                                                          # water pouring off it
+            for vx, vy, sp in self.spray:
+                d = sp * seg(t, 0.6, 1.8)
+                pygame.draw.rect(s, (220, 240, 255), (cx + vx * 360 + vx * d * 0.6, base - 80 + vy * d + 400 * d * d / 1e5,
+                                                      4, 4))
+
+    def _sea(self, s, t):
+        pygame.draw.rect(s, (30, 90, 140), (0, self.SEA_Y, W, H - self.SEA_Y))
+        for x, y, ln in self.waves:
+            xx = (x + t * 40) % (W + 80) - 40
+            pygame.draw.line(s, (90, 170, 210), (xx, y), (xx + ln, y), 2)
+
+    def _jet(self, s, t):
+        if not 1.6 < t < 3.2:
+            return
+        k = seg(t, 1.6, 3.2)
+        x, y = lerp(-160, W + 160, k), 150 - math.sin(k * math.pi) * 40
+        pygame.draw.line(s, (255, 255, 255), (x - 520, y + 6), (x - 60, y + 4), 3)        # contrail
+        body = pygame.Rect(x - 70, y - 9, 140, 18)
+        pygame.draw.ellipse(s, (235, 238, 245), body)
+        pygame.draw.polygon(s, (200, 205, 220), [(x - 10, y), (x - 50, y + 34), (x - 30, y + 34), (x + 20, y)])
+        pygame.draw.polygon(s, (200, 205, 220), [(x - 60, y - 4), (x - 78, y - 28), (x - 64, y - 28), (x - 44, y - 4)])
+        for i in range(5):
+            pygame.draw.rect(s, (40, 60, 100), (x - 28 + i * 14, y - 4, 7, 5))
+
+    def _file(self, s, t):
+        if t < 2.7:
+            return
+        k = ease_out(seg(t, 2.7, 2.95))
+        doc = pygame.Rect(0, 0, 300, 250)
+        doc.topright = (W - 30, 170 - int((1 - k) * 420))
+        pygame.draw.rect(s, (0, 0, 0), doc.move(6, 8))
+        pygame.draw.rect(s, (238, 232, 214), doc)
+        ui.text(s, "CASE FILE", (doc.x + 20, doc.y + 18), 16, (40, 30, 30), bold=True, shadow=False)
+        ui.text(s, "P. 1 / 3000", (doc.right - 20, doc.y + 22), 12, (90, 80, 70), bold=True, anchor="topright",
+                shadow=False)
+        for i, ln in enumerate(self.redact):
+            y = doc.y + 56 + i * 24
+            pygame.draw.rect(s, (150, 140, 120), (doc.x + 20, y + 6, doc.w - 40, 3))
+            bar = seg(t, 2.95 + i * 0.05, 3.1 + i * 0.05)
+            pygame.draw.rect(s, (10, 10, 10), (doc.x + 20, y, int((doc.w - 40) * ln * bar), 14))
+        if t > 3.2:
+            stamp_text(s, "REDACTED", (doc.centerx, doc.centery + 20), 40, (200, 30, 40), pop(t, 3.2, 0.12), 14)
+
+    def render(self, s):
+        t = self.t
+        ctx = self.ctx
+        self._sky(s, t)
+        self._jet(s, t)
+        self._sea(s, t)
+        self._island(s, t)
+        # the caster on his dock, arms up
+        pygame.draw.rect(s, (90, 60, 36), (0, self.SEA_Y + 80, 260, 22))
+        for x in (30, 120, 210):
+            pygame.draw.rect(s, (70, 46, 28), (x, self.SEA_Y + 100, 14, 60))
+        glow(s, (255, 200, 120), (140, self.SEA_Y), 120 + 20 * math.sin(t * 8), 60 * (1 - seg(t, 1.6, 2.0)))
+        self.caster(s, 140, self.SEA_Y + 84, 220, "right")
+        # everyone else bobbing on rafts in the foreground; the wave swamps them
+        wave_k = seg(t, 2.05, 2.45)
+        for i, v in enumerate(ctx.victims[:len(self.rafts)]):
+            x = self.rafts[i]
+            y = H - 70 + int(math.sin(t * 3 + i) * 5)
+            sink = int(70 * ease_in(seg(t, 2.25 + i * 0.04, 2.7 + i * 0.04)))
+            pygame.draw.rect(s, (120, 80, 40), (x - 50, y - 6 + sink, 100, 14))
+            ctx.assets.draw_character(s, x, y + sink, ctx.victim_character(v), 92, "up", False, True, i * 97,
+                                      v.get("color"))
+            pygame.draw.rect(s, (30, 90, 140), (x - 70, y + 6, 140, H - y))                # water in front
+            if sink > 10:
+                ui.text(s, f"-{v['lost']}", (x, y - 120 - sink), 18, ui.BAD, bold=True, anchor="center")
+            name = "YOU" if v["id"] == ctx.me_id else str(v["name"]).upper()
+            ui.text(s, ui.fit(name, 12, 140, True), (x, y - 106 + sink // 2), 12, (255, 240, 220), bold=True,
+                    anchor="center")
+        if 0 < wave_k < 1:                                                                 # the wave rolls in
+            wx = lerp(W + 100, -300, ease_in(wave_k))
+            pygame.draw.polygon(s, (60, 140, 190), [(wx, H), (wx + 60, H - 160), (wx + 160, H - 190),
+                                                    (wx + 260, H - 120), (wx + 300, H), ])
+            pygame.draw.lines(s, (230, 245, 255), False, [(wx + 60, H - 160), (wx + 160, H - 190),
+                                                          (wx + 260, H - 120)], 6)
+        if t > 0.15:
+            ui.text(s, "SUMMONING...", (CX, 52), 22, (255, 240, 220), bold=True, anchor="center",
+                    alpha=255 * seg(t, 0.15, 0.35) * (1 - seg(t, 0.9, 1.1)))
+        if t > 1.15:
+            k = pop(t, 1.15)
+            stamp_text(s, "THE ISLAND RISES", (CX + 4, 82), 54, (0, 0, 0), k)
+            stamp_text(s, "THE ISLAND RISES", (CX, 78), 54, (255, 236, 200), k)
+        if t > 1.5:
+            ui.text(s, "LITTLE ST. JAMES  -  PRIVATE. NO GUESTS. NO QUESTIONS.", (CX, 128), 14, (255, 230, 200),
+                    bold=True, anchor="center", alpha=255 * seg(t, 1.5, 1.8))
+        self._file(s, t)
+        letterbox(s, seg(t, 0.0, 0.3), 30)
+
+
+# --- Sam Altman: steals their RAM ------------------------------------------------------------------------------
+class RamHeist(Scene):
+    """Sam walks down the row, pulls the sticks out of everyone's PC with his own hands,
+    bags them and runs them into the data centre. Their PCs go OUT OF MEMORY."""
+    duration = 4.8
+    end_card_at = 3.85
+    FLOOR = H - 150
+    START, END = 0.45, 2.85            # the round of visits
+    cues = ((0.0, "blip"), (3.0, "whoosh"), (3.35, "cash"))
+
+    def setup(self):
+        r = self.rng
+        n = max(1, min(6, len(self.ctx.victims)))
+        span = W - 520
+        self.cols = [int(250 + span * (i + 0.5) / n) for i in range(n)]
         self.gb = [r.choice((16, 32, 64)) for _ in range(n)]
-        self.dc = pygame.Rect(CX + 150, H - 330, 260, 250)
+        self.slot = (self.END - self.START) / n
+        self.dc = pygame.Rect(W - 190, self.FLOOR - 300, 170, 300)
+        self.cues = self.cues + tuple((self._grab_at(i) + 0.05 * j, "blip") for i in range(n) for j in range(2))
+
+    def _arrive_at(self, i):
+        return self.START + i * self.slot + self.slot * 0.45
+
+    def _grab_at(self, i):
+        return self._arrive_at(i) + 0.02
+
+    def _sam_x(self, t):
+        stops = [x - 80 for x in self.cols]
+        if t < self.START:
+            return lerp(-120, stops[0], 0), False
+        for i, sx in enumerate(stops):
+            t0 = self.START + i * self.slot
+            arrive = self._arrive_at(i)
+            prev = -120 if i == 0 else stops[i - 1]
+            if t < arrive:
+                return lerp(prev, sx, seg(t, t0, arrive)), True
+            if t < t0 + self.slot:
+                return sx, False
+        k = ease_in(seg(t, self.END, self.END + 0.5))
+        return lerp(stops[-1], self.dc.centerx, k), k < 1
 
     def _stick(self, s, center, scale=1.0, angle=0.0):
-        w, h = int(120 * scale), int(30 * scale)
+        w, h = max(4, int(90 * scale)), max(3, int(22 * scale))
         img = pygame.Surface((w, h), pygame.SRCALPHA)
         img.fill((30, 120, 60))
-        for i in range(6):
-            pygame.draw.rect(img, (20, 20, 24), (6 * scale + i * 18 * scale, 5 * scale, 13 * scale, 14 * scale))
-        for i in range(0, w, max(2, int(5 * scale))):
-            pygame.draw.rect(img, (230, 190, 60), (i, h - 6 * scale, max(1, 3 * scale), 6 * scale))
+        for i in range(5):
+            pygame.draw.rect(img, (20, 20, 24), (5 * scale + i * 16 * scale, 4 * scale, 11 * scale, 10 * scale))
+        for i in range(0, w, max(2, int(4 * scale))):
+            pygame.draw.rect(img, (230, 190, 60), (i, h - 5 * scale, max(1, 2 * scale), 5 * scale))
         pygame.draw.rect(img, (16, 70, 34), img.get_rect(), max(1, int(2 * scale)))
         if angle:
             img = pygame.transform.rotate(img, angle)
         s.blit(img, img.get_rect(center=(int(center[0]), int(center[1]))))
 
+    def _pc(self, s, x, k, gb, i):
+        """Tower with its side panel off: two sticks in their slots until Sam takes them."""
+        tower = pygame.Rect(x - 40, self.FLOOR - 120, 80, 120)
+        pygame.draw.rect(s, (20, 22, 30), tower.inflate(6, 6))
+        pygame.draw.rect(s, (60, 64, 80), tower)
+        board = tower.inflate(-16, -20)
+        pygame.draw.rect(s, (24, 80, 50), board)
+        for j in range(2):
+            slot = pygame.Rect(board.x + 10 + j * 16, board.y + 8, 8, 64)
+            pygame.draw.rect(s, (12, 30, 20), slot)
+            if k < 0.5 + j * 0.25:
+                pygame.draw.rect(s, (40, 150, 70), slot.inflate(-2, 0))
+                pygame.draw.rect(s, (230, 190, 60), (slot.x + 1, slot.bottom - 6, 6, 6))
+        mon = pygame.Rect(x - 50, self.FLOOR - 220, 100, 70)                       # the screen on top
+        pygame.draw.rect(s, (20, 22, 30), mon.inflate(8, 8))
+        dead = k >= 1
+        pygame.draw.rect(s, (20, 60, 200) if dead else (30, 40, 60), mon)
+        if dead:
+            ui.text(s, ":(", (mon.x + 10, mon.y + 6), 16, (255, 255, 255), bold=True, shadow=False)
+            ui.text(s, "OUT OF", (mon.centerx, mon.y + 38), 12, (255, 255, 255), bold=True, anchor="center",
+                    shadow=False)
+            ui.text(s, "MEMORY", (mon.centerx, mon.y + 54), 12, (255, 255, 255), bold=True, anchor="center",
+                    shadow=False)
+        else:
+            for j in range(4):
+                pygame.draw.rect(s, (90, 255, 140), (mon.x + 10, mon.y + 10 + j * 14, 30 + ((j * 23 + i * 7) % 50), 6))
+        pygame.draw.rect(s, (20, 22, 30), (x - 6, self.FLOOR - 150, 12, 30))
+        left = int(round(gb * (1 - k)))
+        ui.text(s, f"{left} GB", (x, self.FLOOR + 14), 14, (255, 110, 110) if dead else (160, 240, 190), bold=True,
+                anchor="midtop")
+
     def render(self, s):
         t = self.t
         ctx = self.ctx
         for i in range(10):
-            pygame.draw.rect(s, ui.mix((8, 16, 24), (16, 50, 60), i / 9), (0, i * H // 10, W, H // 10 + 1))
-        # the data centre that eats everything
+            pygame.draw.rect(s, ui.mix((10, 18, 34), (26, 50, 70), i / 9), (0, i * H // 10, W, H // 10 + 1))
+        pygame.draw.rect(s, (22, 26, 36), (0, self.FLOOR, W, H - self.FLOOR))
+        pygame.draw.line(s, (70, 80, 110), (0, self.FLOOR), (W, self.FLOOR), 3)
+        # the data centre on the right
         dc = self.dc
         pygame.draw.rect(s, (24, 28, 36), dc)
         pygame.draw.rect(s, (90, 100, 120), dc, 4)
-        for row in range(6):
-            for col in range(4):
-                on = (row * 4 + col + int(t * 12)) % 5
-                pygame.draw.rect(s, (90, 255, 140) if on else (30, 60, 40),
-                                 (dc.x + 24 + col * 56, dc.y + 46 + row * 30, 40, 8))
-        ui.text(s, "STARGATE", (dc.centerx, dc.y + 20), 16, (220, 230, 255), bold=True, anchor="center")
-        mouth = (dc.centerx, dc.y + 4)
-        # victims: name, gauge, their RAM flying into the data centre
+        for row in range(7):
+            for col in range(2):
+                on = (row * 2 + col + int(t * 12)) % 5
+                pygame.draw.rect(s, (90, 255, 140) if on else (30, 60, 40), (dc.x + 22 + col * 70, dc.y + 50 + row * 26,
+                                                                              56, 8))
+        ui.text(s, "STARGATE", (dc.centerx, dc.y + 18), 16, (220, 230, 255), bold=True, anchor="center")
+        door = pygame.Rect(dc.centerx - 30, dc.bottom - 64, 60, 64)
+        pygame.draw.rect(s, (255, 240, 180) if 3.2 < t < 3.5 else (10, 12, 18), door)
+        # the victims and their PCs
+        sam_x, walking = self._sam_x(t)
+        carried = 0
         for i, v in enumerate(ctx.victims[:len(self.cols)]):
             x = self.cols[i]
-            me = v["id"] == ctx.me_id
-            ui.text(s, ui.fit(str(v["name"]).upper(), 16, 180, True), (x, 110), 16,
-                    (255, 220, 120) if me else (220, 240, 255), bold=True, anchor="center")
-            start = 0.9 + i * 0.3
-            k = seg(t, start, start + 0.9)
-            gb = int(round(self.gb[i] * (1 - k)))
-            g = pygame.Rect(x - 70, 132, 140, 14)
-            pygame.draw.rect(s, (0, 0, 0), g.inflate(4, 4))
-            pygame.draw.rect(s, (255, 80, 80) if gb == 0 else (90, 230, 140), (g.x, g.y, int(g.w * (1 - k)), g.h))
-            ui.text(s, f"{gb} GB RAM", (x, 164), 12, (255, 120, 120) if gb == 0 else (180, 220, 200), bold=True,
-                    anchor="center")
-            if k <= 0:
-                self._stick(s, (x, 210), 1.0)
-            elif k < 1:                                          # bezier into the data centre
-                e = ease_in(k)
-                p0, p1, p2 = (x, 210), ((x + mouth[0]) / 2, -40), mouth
-                bx = (1 - e) ** 2 * p0[0] + 2 * (1 - e) * e * p1[0] + e * e * p2[0]
-                by = (1 - e) ** 2 * p0[1] + 2 * (1 - e) * e * p1[1] + e * e * p2[1]
-                self._stick(s, (bx, by), 1.0 - 0.6 * e, k * 540)
-        # Sam
-        self.caster(s, 300, H - 70, 250, "right", moving=t > 1.0)
-        prog = seg(t, 0.9, 2.6)
-        bar = pygame.Rect(CX - 360, 268, 460, 20)
-        pygame.draw.rect(s, (0, 0, 0), bar.inflate(6, 6))
-        pygame.draw.rect(s, (120, 200, 255), (bar.x, bar.y, int(bar.w * prog), bar.h))
-        ui.text(s, f"DOWNLOADING YOUR RAM ... {int(prog * 100)}%", (bar.x, bar.y - 22), 12, (200, 230, 255), bold=True)
+            g = self._grab_at(i)
+            k = seg(t, g, g + self.slot * 0.4)
+            if k >= 0.5:
+                carried += 1
+            self._pc(s, x, k, self.gb[i], i)
+            ctx.assets.draw_character(s, x + 70, self.FLOOR + 4, ctx.victim_character(v), 110,
+                                      "left" if t < g + 0.4 else "down", False, True, i * 131, v.get("color"))
+            name = "YOU" if v["id"] == ctx.me_id else str(v["name"]).upper()
+            ui.text(s, ui.fit(name, 12, 130, True), (x + 70, self.FLOOR - 128), 12,
+                    (255, 220, 120) if v["id"] == ctx.me_id else (220, 240, 255), bold=True, anchor="center")
+            if 0 < k < 1:                                                       # sticks pulled into the bag
+                for j in range(2):
+                    kj = seg(k, j * 0.3, 0.6 + j * 0.3)
+                    if 0 < kj < 1:
+                        p0 = (x - 14 + j * 16, self.FLOOR - 80)
+                        p1 = (sam_x + 30, self.FLOOR - 70)
+                        bx = lerp(p0[0], p1[0], kj)
+                        by = lerp(p0[1], p1[1], kj) - math.sin(kj * math.pi) * 70
+                        self._stick(s, (bx, by), 0.7, kj * 360)
+            if k >= 1 and t < g + self.slot * 0.4 + 0.5:
+                ui.text(s, "HEY!", (x + 70, self.FLOOR - 150), 14, ui.BAD, bold=True, anchor="center")
+        # Sam and his growing sack
+        if t < self.END + 0.5:
+            self.caster(s, sam_x, self.FLOOR + 4, 170, "right", moving=walking)
+            size = 14 + 4 * carried
+            sack = (int(sam_x - 46), int(self.FLOOR - 14 - size))
+            pygame.draw.circle(s, (60, 40, 20), sack, size + 3)
+            pygame.draw.circle(s, (170, 130, 80), sack, size)
+            pygame.draw.line(s, (90, 60, 30), (sack[0] - 6, sack[1] - size), (sack[0] + 6, sack[1] - size - 10), 4)
+            if carried:
+                ui.text(s, "RAM", sack, 12, (60, 40, 20), bold=True, anchor="center", shadow=False)
+        stolen = sum(self.gb[i] for i in range(len(self.cols)) if t >= self._grab_at(i) + self.slot * 0.4)
+        ui.text(s, f"STOLEN: {stolen} GB", (40, 104), 16, (120, 200, 255), bold=True)
         title = "SAM ALTMAN IS STEALING YOUR RAM"
-        big_text(s, title[:int(t * 40) + 1], (CX, 52), 30, (255, 255, 255))
-        if t > 2.6:
-            k = pop(t, 2.6)
-            stamp_text(s, "THANKS FOR THE COMPUTE", (CX - 120, 340), 40, (255, 220, 120), k, 6)
+        big_text(s, title[:int(t * 40) + 1], (CX, 56), 30, (255, 255, 255))
+        if t > 3.3:
+            stamp_text(s, "THANKS FOR THE COMPUTE", (CX - 120, 210), 40, (255, 220, 120), pop(t, 3.3), 6)
+        if t > 3.1:
             tick = "DRAM PRICES  +400%  ^^^   GPU  +900%  ^^^   YOUR SCORE  -10  vvv   "
             off = int(t * 220) % ui.text_width(tick, 14, True)
-            ui.text(s, tick * 3, (-off, 404), 14, (120, 255, 160), bold=True)
+            ui.text(s, tick * 3, (-off, 140), 14, (120, 255, 160), bold=True)
         letterbox(s, seg(t, 0.0, 0.3), 30)
 
 
@@ -811,6 +1234,7 @@ SCENES = {
     "palantir-patrick": DroneStrike,
     "claude": CodeReview,
     "sam-altman": RamHeist,
+    "epstein": IslandSummon,
 }
 
 
@@ -853,7 +1277,7 @@ class CutscenePlayer:
     def add(self, m, me_id, players=None, toasts=None):
         ctx = Ctx(self.app, m, me_id, players)
         cls = SCENES.get(ctx.slug)
-        if cls is None:                                    # Mia, Leo (and anyone without a scene): no animation
+        if cls is None:                                    # Mia, Leo: no scene of their own, a toast instead
             self.app.sfx.play("hit")
             if toasts is not None:
                 who = "You" if ctx.mine else ctx.name

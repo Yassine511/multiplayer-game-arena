@@ -498,7 +498,7 @@ class GameScreen(Screen):
             return
         t = pygame.time.get_ticks()
         pulse = 0.5 + 0.5 * math.sin(t / 140)
-        b = pygame.Rect(0, 0, 360, 74)
+        b = pygame.Rect(0, 0, 400, 92)
         b.midbottom = (CANVAS_W // 2, CANVAS_H - 84)
         glow = b.inflate(int(16 + 14 * pulse), int(12 + 10 * pulse))
         g = pygame.Surface(glow.size, pygame.SRCALPHA)
@@ -506,8 +506,8 @@ class GameScreen(Screen):
         surf.blit(g, glow)
         ui.panel(surf, b, ui.mix(ui.ORANGE, ui.WARN, pulse), 10, ui.ICE, 255)
         ui.hazard(surf, (b.x + 10, b.y + 8, b.w - 20, 8))
-        ui.text(surf, "ULTIMATE READY", (b.centerx, b.y + 24), 22, ui.INK, bold=True, anchor="midtop", shadow=False)
-        ui.text(surf, f"SPACE  -  EVERYONE ELSE -{config.ULT_DAMAGE}", (b.centerx, b.y + 52), 12, ui.INK,
+        ui.text(surf, "ULTIMATE READY", (b.centerx, b.y + 28), 22, ui.INK, bold=True, anchor="midtop", shadow=False)
+        ui.text(surf, f"SPACE  -  EVERYONE ELSE -{config.ULT_DAMAGE}", (b.centerx, b.y + 62), 12, ui.INK,
                 bold=True, anchor="midtop", shadow=False)
         self.ult_rect = b
 

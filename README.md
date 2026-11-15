@@ -109,7 +109,8 @@ server/udp.py        POS validation, SNAPSHOT broadcast
 server/data/questions.json   52 networking MCQs (answers never leave the server)
 client/main.py       app shell (--admin, --server)
 client/net.py        TCP + UDP background threads, ping, auto-reconnect + RESUME
-client/assets.py     map, backdrops, room cards, astronaut sprites, terminal beacons
+client/assets.py     map, backdrops, room cards, character sprites, terminal beacons
+common/characters.py the ten playable characters (shared by server and client)
 client/ui.py         pixel-station UI kit: palette, text, panels, buttons
 tools/               import_art.py, build_map.py
 client/screens/      login, lobby, room, game, spectator, results
@@ -131,12 +132,12 @@ corridors, one terminal per room, everyone spawns on the central plaza.
 Players see a camera that follows them (with a minimap); the admin sees the
 whole station.
 
-The artist's originals live in `Map_and_rooms/`. Two small tools turn them
+The artist's originals live in `Map_and_rooms_charac/`. Two small tools turn them
 into what the game loads (they need `pip install pillow numpy scipy`; playing
 does not):
 
 ```
-python tools/import_art.py     # Map_and_rooms/ -> client/assets/ (map, room cards, backdrops)
+python tools/import_art.py     # Map_and_rooms_charac/ -> client/assets/ (map, room cards, backdrops)
 python tools/build_map.py      # client/assets/map.png -> common/map_grid.py (the walls)
 ```
 
@@ -148,15 +149,21 @@ tools after the map art changes (`--debug DIR` writes pictures of the floor).
 Terminal, spawn and room positions are in `common/map_data.py`, written in
 map.png pixels.
 
-**Characters.** Until real sprites arrive, players are drawn in code as small
-astronauts in their colour. To replace them, drop PNGs with transparency into
-`client/assets/` (feet at the bottom centre, about 4:5):
+**Characters.** Ten characters: Gojo, Mia, Leo, MUI Goku, Epstein, Sukuna,
+Claude, Palantir Patrick, Sam Altman and Trump. In the room, before the game,
+every player picks one: the "Your character" panel (arrows `<` `>` or the
+left/right keys) or the full grid (`C`, then click or press 1-0). Several
+players may pick the same character; the coloured name above each sprite tells
+them apart. The pick is remembered in `~/.arena_client.json` and sent to the
+server (`SET_CHARACTER`) after login, so it carries into every room.
 
-| File | Used for |
-|---|---|
-| `player_<c>_<dir>.png` | colour index `c` (0-9) facing `dir` (`up`/`down`/`left`/`right`) |
-| `player_<c>.png` | colour `c`, any direction |
-| `player_<dir>.png` / `player.png` | same sprite for every player |
+The names and order are in `common/characters.py`. The art is baked from
+`Map_and_rooms_charac/` (three turnaround sheets plus seven Codex pet sheets in
+`Map_and_rooms_charac/characters/`) into `client/assets/characters/`:
+
+```
+python tools/import_characters.py
+```
 
 The look of every screen (palette, pixel text, panels, buttons) is in
 `client/ui.py`.

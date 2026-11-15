@@ -26,6 +26,7 @@ SPECTATE_ROOM = "SPECTATE_ROOM"
 LEAVE_ROOM = "LEAVE_ROOM"
 ROOM_UPDATE = "ROOM_UPDATE"
 ROOM_CLOSED = "ROOM_CLOSED"
+SET_CHARACTER = "SET_CHARACTER"        # {character: 0-9}; changes the roster entry while waiting
 
 # --- TCP: game -----------------------------------------------------------------
 START_GAME = "START_GAME"

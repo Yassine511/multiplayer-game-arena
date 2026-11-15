@@ -1,4 +1,4 @@
-"""Copy the art from Map_and_rooms/ into client/assets/ under the names the
+"""Copy the art from Map_and_rooms_charac/ into client/assets/ under the names the
 client loads. Re-run after the art changes, then run build_map.py.
 
     python tools/import_art.py
@@ -8,7 +8,7 @@ import os
 from PIL import Image
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SRC = os.path.join(ROOT, "Map_and_rooms")
+SRC = os.path.join(ROOT, "Map_and_rooms_charac")
 DST = os.path.join(ROOT, "client", "assets")
 
 ROOMS = {

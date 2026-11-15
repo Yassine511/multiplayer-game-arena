@@ -6,20 +6,19 @@ Files live in client/assets/ (tools/import_art.py fills it from Map_and_rooms/):
   bg_login.jpg / bg_space.jpg / bg_scene.jpg      screen backdrops
   rooms/<slug>.png              one card per room, shown on its terminal
 
-Characters are drawn in code until real sprites arrive. To replace them, drop
-any of these in client/assets/ (PNG with transparency, feet at the bottom
-centre, roughly 4:5):
+  characters/<slug>.png + characters/characters.json
+                                the ten playable characters (tools/import_characters.py)
 
-  player_<c>_<dir>.png          colour index c (0-9) facing up/down/left/right
-  player_<c>.png                colour index c, any direction
-  player_<dir>.png / player.png same sprite for every colour
+If a character's art is missing, that player is drawn as a small astronaut in
+their colour instead.
 """
+import json
 import math
 import os
 
 import pygame
 
-from common import config, map_data
+from common import characters, config, map_data
 from client import ui
 
 ASSET_DIR = os.path.join(os.path.dirname(__file__), "assets")
@@ -34,6 +33,7 @@ GREY = (110, 114, 140)
 # map is shown pixel for pixel (no resampling blur)
 VIEW_ZOOM = map_data.ART_W / config.WORLD_W
 SPRITE_W, SPRITE_H = 16, 20
+CHAR_H_PER_SCALE = 24        # character height in screen px per sprite "scale" (3 in game -> 72 px)
 
 
 def color_of(idx):
@@ -49,6 +49,7 @@ class Assets:
         self._sprites = {}
         self._backdrops = {}
         self._cones = {}
+        self.chars = CharacterArt()
         self._map_src = self._load("map.png", alpha=False)
         if self._map_src is None:
             self._map_src = self._fallback_map()
@@ -110,50 +111,53 @@ class Assets:
         return self._cards[key]
 
     # --- players ------------------------------------------------------------------------
-    def _custom_player(self, color_idx, direction, scale):
-        size = (SPRITE_W * scale, SPRITE_H * scale)
-        for name in (f"player_{color_idx}_{direction}.png", f"player_{color_idx}.png",
-                     f"player_{direction}.png", "player.png"):
-            img = self._load(name)
-            if img is not None:
-                return pygame.transform.smoothscale(img, size).convert_alpha()
-        return None
-
     def player_sprite(self, color_idx, direction="down", frame=0, scale=3, connected=True):
-        """Astronaut in the player's colour. frame: 0 standing, 1 / 2 walking."""
+        """Astronaut in the player's colour (fallback art). frame: 0 standing, 1 / 2 walking."""
         key = (color_idx, direction, frame, scale, connected)
         img = self._sprites.get(key)
         if img is None:
-            img = self._custom_player(color_idx, direction, scale)
-            if img is None:
-                img = _draw_astronaut(color_of(color_idx) if connected else GREY, direction, frame)
-                img = pygame.transform.scale(img, (img.get_width() * scale, img.get_height() * scale)).convert_alpha()
+            img = _draw_astronaut(color_of(color_idx) if connected else GREY, direction, frame)
+            img = pygame.transform.scale(img, (img.get_width() * scale, img.get_height() * scale)).convert_alpha()
             if not connected:
                 img = img.copy()
                 img.fill((150, 150, 170, 150), special_flags=pygame.BLEND_RGBA_MULT)
             self._sprites[key] = img
         return img
 
+    def draw_character(self, surf, sx, sy, character, height, direction="down", moving=False,
+                       connected=True, phase_ms=0, color_idx=None):
+        """Draw a character with its feet on (sx, sy) and return its rect. Without its art,
+        the player's astronaut is drawn instead."""
+        img, anchor, lift = self.chars.frame(character, direction, moving, height, connected, phase_ms)
+        if img is None:
+            scale = max(1, round(height / CHAR_H_PER_SCALE))
+            t = pygame.time.get_ticks()
+            frame = (1 + (t // 140) % 2) if moving else 0
+            img = self.player_sprite(color_idx, direction, frame, scale, connected)
+            rect = img.get_rect(midbottom=(int(sx), int(sy) + scale))
+        else:
+            rect = img.get_rect(topleft=(int(sx) - anchor[0], int(sy) - anchor[1] - lift))
+        surf.blit(img, rect)
+        return rect
+
     def draw_player(self, surf, sx, sy, color_idx, direction, name, me=False, connected=True,
-                    moving=False, scale=3, label=True):
+                    moving=False, scale=3, label=True, character=None):
         """(sx, sy) is where the feet stand, in screen px."""
         t = pygame.time.get_ticks()
-        frame = (1 + (t // 140) % 2) if moving else 0
-        img = self.player_sprite(color_idx, direction, frame, scale, connected)
         sx, sy = int(sx), int(sy)
         sh = pygame.Rect(0, 0, 9 * scale, 3 * scale)
         sh.center = (sx, sy)
         pygame.draw.ellipse(surf, (10, 12, 40), sh)
-        bob = 0 if moving else int(math.sin(t / 380 + (color_idx or 0)) * 1.2)
-        rect = img.get_rect(midbottom=(sx, sy + scale + bob))
-        surf.blit(img, rect)
+        height = CHAR_H_PER_SCALE * scale
+        rect = self.draw_character(surf, sx, sy, character, height, direction, moving, connected,
+                                   (color_idx or 0) * 137, color_idx)
         if not label:
             return rect
         size = 14 if scale >= 3 else 12
         tag = ui.fit(name, size, 150, True) + ("" if connected else " (off)")
         tw = ui.text_width(tag, size, True)
         bg = pygame.Rect(0, 0, tw + 10, size + 8)
-        bg.midbottom = (sx, rect.top - 2)
+        bg.midbottom = (sx, sy - height - 4)        # fixed height: the plate never jitters with the frames
         ui.plate(surf, bg, ui.INK, 170, 2)
         ui.text(surf, tag, (bg.centerx, bg.centery), size,
                 (ui.ICE if me else color_of(color_idx)) if connected else ui.MUTED, bold=True, anchor="center")
@@ -227,6 +231,86 @@ class Assets:
         bg.midbottom = (sx, scr.top - 3 * u)
         ui.plate(surf, bg, ui.INK, 215, 2)
         ui.text(surf, label, (bg.centerx, bg.centery), size, color, bold=True, anchor="center")
+
+
+# --- characters ---------------------------------------------------------------------------------
+class CharacterArt:
+    """The ten baked character atlases. Each frame is scaled once per height and cached,
+    so drawing a character is a single blit. prewarm() fills the cache for a size ahead
+    of time, keeping the scaling out of animated frames."""
+
+    def __init__(self):
+        self.target_h = 160
+        self.meta = {}
+        self.atlas = {}
+        self._cache = {}
+        folder = os.path.join(ASSET_DIR, "characters")
+        try:
+            with open(os.path.join(folder, "characters.json")) as f:
+                data = json.load(f)
+            self.target_h = data["target_h"]
+            for ch in characters.CHARACTERS:
+                slug = ch["slug"]
+                if slug not in data["characters"]:
+                    continue
+                img = pygame.image.load(os.path.join(folder, f"{slug}.png")).convert_alpha()
+                self.atlas[slug] = img
+                self.meta[slug] = data["characters"][slug]
+        except (OSError, KeyError, ValueError, pygame.error) as e:
+            print(f"[assets] character art unavailable ({e}); drawing astronauts")
+
+    def has(self, character):
+        return characters.valid(character) and characters.CHARACTERS[character]["slug"] in self.atlas
+
+    def anim(self, character, direction, moving):
+        """(atlas row, frame count, ms per frame, hop) for a pose."""
+        m = self.meta[characters.CHARACTERS[character]["slug"]]
+        d = direction if direction in ("up", "down", "left", "right") else "down"
+        row, ms, hop = m["anims"][f"{'walk' if moving else 'idle'}_{d}"]
+        return row, m["frames"][row], ms, hop
+
+    def scaled(self, character, row, i, height, connected=True):
+        """(surface, feet anchor) of one frame, scaled so the idle pose is `height` px."""
+        key = (character, row, i, height, connected)
+        hit = self._cache.get(key)
+        if hit is not None:
+            return hit
+        slug = characters.CHARACTERS[character]["slug"]
+        m = self.meta[slug]
+        cw, ch = m["cell"]
+        img = self.atlas[slug].subsurface((i * cw, row * ch, cw, ch))
+        k = height / self.target_h
+        if abs(k - 1) > 1e-3:
+            img = pygame.transform.smoothscale(img, (max(1, round(cw * k)), max(1, round(ch * k))))
+        else:
+            img = img.copy()
+        if not connected:
+            if hasattr(pygame.transform, "grayscale"):
+                img = pygame.transform.grayscale(img)
+            img.fill((150, 150, 170, 150), special_flags=pygame.BLEND_RGBA_MULT)
+        hit = (img.convert_alpha(), (round(m["anchor"][0] * k), round(m["anchor"][1] * k)))
+        self._cache[key] = hit
+        return hit
+
+    def frame(self, character, direction, moving, height, connected=True, phase_ms=0):
+        """(surface, anchor, lift px) for this instant, or (None, None, 0) without art."""
+        if not self.has(character):
+            return None, None, 0
+        row, n, ms, hop = self.anim(character, direction, moving)
+        t = pygame.time.get_ticks() + phase_ms
+        img, anchor = self.scaled(character, row, (t // ms) % n, height, connected)
+        lift = 0
+        if hop:                                     # single-pose art: a light hop while walking
+            lift = int(abs(math.sin(t / (ms * 1.3))) * height * 0.06)
+        return img, anchor, lift
+
+    def prewarm(self, height, chars=None):
+        for c in (range(characters.COUNT) if chars is None else chars):
+            if self.has(c):
+                m = self.meta[characters.CHARACTERS[c]["slug"]]
+                for row, n in enumerate(m["frames"]):
+                    for i in range(n):
+                        self.scaled(c, row, i, height)
 
 
 # --- the placeholder astronaut -----------------------------------------------------------------

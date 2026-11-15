@@ -60,7 +60,7 @@ def scores_payload(room):
     ranked = sorted(room.players.values(), key=_rank_key)
     return [
         {"id": p.id, "name": p.name, "score": p.score, "connected": p.connected,
-         "status": p.status, "color": p.color}
+         "status": p.status, "color": p.color, "character": p.character}
         for p in ranked
     ]
 
@@ -97,7 +97,8 @@ def started_message(room):
         map=map_data.payload(),
         terminals=[t.payload(now) for t in room.terminals.values()],
         spawns=[{"id": p.id, "x": p.x, "y": p.y} for p in room.players.values()],
-        players=[{"id": p.id, "name": p.name, "color": p.color, "status": p.status}
+        players=[{"id": p.id, "name": p.name, "color": p.color, "status": p.status,
+                  "character": p.character}
                  for p in room.players.values()],
         positions=[{"id": p.id, "x": round(p.x, 1), "y": round(p.y, 1), "dir": p.dir}
                    for p in room.players.values()],
@@ -181,7 +182,7 @@ def game_over(room, now):
     ranked = sorted(room.players.values(), key=_rank_key)
     leaderboard = [
         {"rank": i + 1, "id": p.id, "name": p.name, "score": p.score,
-         "connected": p.connected, "color": p.color}
+         "connected": p.connected, "color": p.color, "character": p.character}
         for i, p in enumerate(ranked)
     ]
     winner = ranked[0].name if ranked and ranked[0].score > 0 else None

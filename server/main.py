@@ -185,6 +185,8 @@ class Server:
             return self.rooms.join_room(s, m.get("code"))
         if t == P.SPECTATE_ROOM:
             return self.rooms.spectate_room(s, m.get("code"))
+        if t == P.SET_CHARACTER:
+            return self.rooms.set_character(s, m.get("character"))
         if t == P.LEAVE_ROOM:
             if s.room is None:
                 s.send(P.error(P.E_NOT_IN_ROOM, "You are not in a room"))

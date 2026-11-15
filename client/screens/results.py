@@ -58,9 +58,9 @@ class ResultsScreen(Screen):
             if row is None or rise < 1.0:
                 continue
             hop = abs(math.sin(age * 4.2)) * 10 if rank == 1 else 0
-            sprite = assets.player_sprite(row.get("color"), "down", 0, 5 if rank == 1 else 4, row.get("connected", True))
-            r = sprite.get_rect(midbottom=(cx, step.y + 6 - int(hop)))
-            surf.blit(sprite, r)
+            r = assets.draw_character(surf, cx, step.y + 4 - int(hop), row.get("character"),
+                                      128 if rank == 1 else 104, "down", False, row.get("connected", True),
+                                      rank * 211, row.get("color"))
             name = ui.fit(row["name"], 14, 136, True)
             tag = pygame.Rect(0, 0, ui.text_width(name, 14, True) + 14, 24)
             tag.midbottom = (cx, r.top - 6)

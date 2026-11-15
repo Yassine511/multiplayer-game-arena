@@ -6,6 +6,7 @@ Run from the arena/ folder:
     python -m client.main --admin                         # admin spectator (on the server PC)
 """
 import argparse
+import json
 import os
 import sys
 
@@ -31,7 +32,7 @@ _dpi_aware()
 os.environ.setdefault("PYGAME_HIDE_SUPPORT_PROMPT", "1")
 import pygame  # noqa: E402
 
-from common import config  # noqa: E402
+from common import characters, config  # noqa: E402
 from common import protocol as P  # noqa: E402
 from client import ui  # noqa: E402
 from client.assets import Assets  # noqa: E402
@@ -40,6 +41,7 @@ from client.screens.base import CANVAS_H, CANVAS_W  # noqa: E402
 
 
 FADE_S = 0.28
+PREFS_PATH = os.path.join(os.path.expanduser("~"), ".arena_client.json")   # last character picked
 FPS_CAP = 240
 # per-backdrop options: where stars may twinkle, and a tint that keeps panels readable
 BACKDROPS = {
@@ -61,6 +63,7 @@ class App:
         pygame.display.set_icon(self.assets.player_sprite(5, "down", 0, 2))
         self.fade = 0.0             # seconds left of the fade-in after a screen change
         self.admin_mode = args.admin
+        self.character, self.character_saved = self._load_character()
         self.me = None              # LOGIN_OK fields
         self.room = None            # latest ROOM_UPDATE
         self.connected = False
@@ -91,6 +94,37 @@ class App:
     def on_login(self, m):
         self.me = dict(m)
         self.net.start_udp(m["token"], m["udp_port"])
+        # never picked: the server deals one out by seat; TCP is ordered, so this lands before any join
+        if not self.is_admin and self.character_saved:
+            self.net.send(P.msg(P.SET_CHARACTER, character=self.character))
+
+    # --- character choice (remembered between runs) ------------------------------------------
+    def _load_character(self):
+        try:
+            with open(PREFS_PATH) as f:
+                c = json.load(f).get("character")
+            if characters.valid(c):
+                return c, True
+        except (OSError, ValueError, AttributeError):
+            pass
+        return 0, False
+
+    def set_character(self, c):
+        """Pick a character: shown at once locally, then confirmed by the server's roster."""
+        if not characters.valid(c):
+            return
+        self.character, self.character_saved = c, True
+        try:
+            with open(PREFS_PATH, "w") as f:
+                json.dump({"character": c}, f)
+        except OSError:
+            pass
+        if self.me is not None:
+            self.net.send(P.msg(P.SET_CHARACTER, character=c))
+            if self.room:
+                for p in self.room.get("players", []):
+                    if p["id"] == self.me["player_id"]:
+                        p["character"] = c
 
     # --- window ---------------------------------------------------------------------------
     @staticmethod

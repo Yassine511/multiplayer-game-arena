@@ -1,10 +1,17 @@
 import pygame
 
+from common import characters as CH
 from common import config
 from common import protocol as P
 from client import ui
 from client.qr import make_qr_surface
 from client.screens.base import CANVAS_W, Screen
+from client.screens.picker import CARD_H_SPRITE, CharacterPicker
+
+SHOW_H = 150                 # showcase sprite height
+ROSTER_H = 30                # roster sprite height
+# the showcase turns the character around: (direction, walking, seconds)
+SHOWCASE = [("down", False, 2.2), ("right", True, 1.6), ("left", True, 1.6), ("down", True, 1.4)]
 
 
 class RoomScreen(Screen):
@@ -15,11 +22,50 @@ class RoomScreen(Screen):
         self.left = pygame.Rect(36, 32, 430, 656)
         self.right = pygame.Rect(CANVAS_W - 36 - 330, 32, 330, 408)
         self.brief = pygame.Rect(490, 458, 452, 230)
+        self.pick = pygame.Rect(490, 32, 400, 408)
         bx, by, bw = self.left.x + 28, self.left.bottom - 76, self.left.w - 56
         self.btn_start = ui.Button((bx, by, bw - 142, 52), "START GAME", self.start, color=ui.BTN_GO, size=18)
         self.btn_leave = ui.Button((bx + bw - 130, by, 130, 52), "LEAVE", self.leave, color=ui.BTN_DANGER, size=16)
+        pk = self.pick
+        self.btn_prev = ui.Button((pk.x + 24, pk.y + 150, 48, 56), "<", lambda: self.step(-1), color=ui.BTN_QUIET, size=20)
+        self.btn_next = ui.Button((pk.right - 72, pk.y + 150, 48, 56), ">", lambda: self.step(1), color=ui.BTN_QUIET, size=20)
+        self.btn_all = ui.Button((pk.x + 24, pk.bottom - 72, pk.w - 48, 50), "ALL CHARACTERS  (C)", self.open_picker,
+                                 size=16)
+        self.picker = None
         self._qr_for = None
         self._qr = None
+        # scale every frame used on this screen now, behind the screen fade, not mid-animation
+        chars = app.assets.chars
+        for h in (SHOW_H, CARD_H_SPRITE, ROSTER_H):
+            chars.prewarm(h)
+        if self._is_player() and not app.character_saved and not getattr(app, "character_prompted", False):
+            app.character_prompted = True
+            self.open_picker()            # first room ever: start on the character select
+
+    # --- character ------------------------------------------------------------------------
+    def _is_player(self):
+        room, me = self.app.room, self.app.me
+        if me is None or me.get("role") == "admin":
+            return False
+        return room is None or any(p["id"] == me["player_id"] for p in room.get("players", []))
+
+    def my_character(self):
+        room, me = self.app.room, self.app.me
+        if room and me:
+            for p in room.get("players", []):
+                if p["id"] == me["player_id"] and CH.valid(p.get("character")):
+                    return p["character"]
+        return self.app.character
+
+    def step(self, d):
+        self.app.set_character((self.my_character() + d) % CH.COUNT)
+        self.show_t0 = pygame.time.get_ticks()
+
+    def open_picker(self):
+        self.picker = CharacterPicker(self.app, self.my_character(), self.app.set_character, self.close_picker)
+
+    def close_picker(self):
+        self.picker = None
 
     def start(self):
         self.app.net.send(P.msg(P.START_GAME))
@@ -35,9 +81,22 @@ class RoomScreen(Screen):
         return bool(room and me and room["host"] == me["player_id"])
 
     def handle_event(self, e):
+        if self.picker is not None:
+            self.picker.handle(e)
+            return
         if self._is_host():
             self.btn_start.handle(e)
         self.btn_leave.handle(e)
+        if self._is_player():
+            for b in (self.btn_prev, self.btn_next, self.btn_all):
+                b.handle(e)
+            if e.type == pygame.KEYDOWN:
+                if e.key == pygame.K_c:
+                    self.open_picker()
+                elif e.key == pygame.K_LEFT:
+                    self.step(-1)
+                elif e.key == pygame.K_RIGHT:
+                    self.step(1)
 
     def handle_msg(self, m):
         t = m["type"]
@@ -90,10 +149,9 @@ class RoomScreen(Screen):
             me = self.app.me and p["id"] == self.app.me["player_id"]
             if me:
                 pygame.draw.rect(surf, ui.PANEL_HI, (x - 8, y - 1, left.w - 40, row_h - 2))
-            sprite = assets.player_sprite(p["color"], "down", 0, 2, on)
-            head = sprite.subsurface((0, 0, sprite.get_width(), 22))        # helmet only
             mid = y + row_h // 2 - 2
-            surf.blit(head, (x, mid - 11))
+            assets.draw_character(surf, x + 16, y + row_h - 3, p.get("character"), min(ROSTER_H, row_h - 4),
+                                  "down", False, on, p["color"] * 137, p["color"])
             name = ui.fit(p["name"], 20, 200)
             r = ui.text(surf, name, (x + 46, mid), 20, ui.ICE if on else ui.MUTED, anchor="midleft")
             tx = r.right + 10
@@ -118,6 +176,9 @@ class RoomScreen(Screen):
             ui.text(surf, "WAITING FOR HOST" + dots, (x, self.btn_leave.rect.centery), 14, ui.MUTED,
                     bold=True, anchor="midleft")
         self.btn_leave.draw(surf)
+
+        if self._is_player():
+            self._draw_showcase(surf)
 
         # join info + QR (the QR encodes the same join info as the code)
         right = self.right
@@ -155,4 +216,31 @@ class RoomScreen(Screen):
             y += 32
         ui.text(surf, f"HIGHEST SCORE AFTER {length} WINS", (brief.right - 28, brief.bottom - 22), 12,
                 ui.WARN, bold=True, anchor="bottomright")
+        if self.picker is not None:
+            self.picker.draw(surf, room["players"], self.app.me and self.app.me["player_id"])
         self.draw_toasts(surf)
+
+    def _draw_showcase(self, surf):
+        """Your character on a stage, turning around; arrows cycle, C opens the grid."""
+        pk = self.pick
+        ui.panel(surf, pk, ui.PANEL, 18, ui.CYAN, 236)
+        ui.heading(surf, "YOUR CHARACTER", (pk.x + 24, pk.y + 20), pk.w - 48, ui.CYAN, 14)
+        c = self.my_character()
+        feet = (pk.centerx, pk.y + 246)
+        ring = pygame.Rect(0, 0, 150, 34)
+        ring.center = feet
+        pygame.draw.ellipse(surf, ui.INK, ring.inflate(8, 6))
+        pygame.draw.ellipse(surf, ui.TEAL_DK, ring)
+        pygame.draw.ellipse(surf, ui.CYAN, ring, 2)
+        total = sum(s for _, _, s in SHOWCASE)
+        t = (pygame.time.get_ticks() - getattr(self, "show_t0", 0)) / 1000 % total
+        for d, walking, secs in SHOWCASE:
+            if t < secs:
+                break
+            t -= secs
+        self.app.assets.draw_character(surf, *feet, c, SHOW_H, d, walking)
+        ui.text(surf, CH.name_of(c).upper(), (pk.centerx, pk.y + 276), 22, ui.WARN, bold=True, anchor="midtop")
+        ui.text(surf, f"{c + 1} / {CH.COUNT}", (pk.centerx, pk.y + 306), 12, ui.MUTED, bold=True,
+                anchor="midtop")
+        for b in (self.btn_prev, self.btn_next, self.btn_all):
+            b.draw(surf)

@@ -1,0 +1,595 @@
+{
+ "target_h": 160,
+ "characters": {
+  "gojo": {
+   "cell": [
+    74,
+    164
+   ],
+   "anchor": [
+    37,
+    162
+   ],
+   "frames": [
+    1,
+    1,
+    1,
+    1
+   ],
+   "anims": {
+    "idle_down": [
+     0,
+     150,
+     false
+    ],
+    "walk_down": [
+     0,
+     85,
+     true
+    ],
+    "idle_up": [
+     1,
+     150,
+     false
+    ],
+    "walk_up": [
+     1,
+     85,
+     true
+    ],
+    "idle_left": [
+     2,
+     150,
+     false
+    ],
+    "walk_left": [
+     2,
+     85,
+     true
+    ],
+    "idle_right": [
+     3,
+     150,
+     false
+    ],
+    "walk_right": [
+     3,
+     85,
+     true
+    ]
+   },
+   "hop": true
+  },
+  "mia": {
+   "cell": [
+    84,
+    164
+   ],
+   "anchor": [
+    42,
+    162
+   ],
+   "frames": [
+    1,
+    1,
+    1,
+    1
+   ],
+   "anims": {
+    "idle_down": [
+     0,
+     150,
+     false
+    ],
+    "walk_down": [
+     0,
+     85,
+     true
+    ],
+    "idle_up": [
+     1,
+     150,
+     false
+    ],
+    "walk_up": [
+     1,
+     85,
+     true
+    ],
+    "idle_left": [
+     2,
+     150,
+     false
+    ],
+    "walk_left": [
+     2,
+     85,
+     true
+    ],
+    "idle_right": [
+     3,
+     150,
+     false
+    ],
+    "walk_right": [
+     3,
+     85,
+     true
+    ]
+   },
+   "hop": true
+  },
+  "leo": {
+   "cell": [
+    67,
+    164
+   ],
+   "anchor": [
+    33,
+    162
+   ],
+   "frames": [
+    1,
+    1,
+    1,
+    1
+   ],
+   "anims": {
+    "idle_down": [
+     0,
+     150,
+     false
+    ],
+    "walk_down": [
+     0,
+     85,
+     true
+    ],
+    "idle_up": [
+     1,
+     150,
+     false
+    ],
+    "walk_up": [
+     1,
+     85,
+     true
+    ],
+    "idle_left": [
+     2,
+     150,
+     false
+    ],
+    "walk_left": [
+     2,
+     85,
+     true
+    ],
+    "idle_right": [
+     3,
+     150,
+     false
+    ],
+    "walk_right": [
+     3,
+     85,
+     true
+    ]
+   },
+   "hop": true
+  },
+  "mui-goku": {
+   "cell": [
+    118,
+    164
+   ],
+   "anchor": [
+    59,
+    162
+   ],
+   "frames": [
+    8,
+    8,
+    8,
+    8
+   ],
+   "anims": {
+    "idle_down": [
+     0,
+     150,
+     false
+    ],
+    "idle_up": [
+     0,
+     150,
+     false
+    ],
+    "idle_left": [
+     0,
+     150,
+     false
+    ],
+    "idle_right": [
+     0,
+     150,
+     false
+    ],
+    "walk_right": [
+     1,
+     85,
+     false
+    ],
+    "walk_left": [
+     2,
+     85,
+     false
+    ],
+    "walk_down": [
+     3,
+     85,
+     false
+    ],
+    "walk_up": [
+     3,
+     85,
+     false
+    ]
+   },
+   "hop": false
+  },
+  "epstein": {
+   "cell": [
+    99,
+    164
+   ],
+   "anchor": [
+    49,
+    162
+   ],
+   "frames": [
+    6,
+    8,
+    8,
+    6
+   ],
+   "anims": {
+    "idle_down": [
+     0,
+     150,
+     false
+    ],
+    "idle_up": [
+     0,
+     150,
+     false
+    ],
+    "idle_left": [
+     0,
+     150,
+     false
+    ],
+    "idle_right": [
+     0,
+     150,
+     false
+    ],
+    "walk_right": [
+     1,
+     85,
+     false
+    ],
+    "walk_left": [
+     2,
+     85,
+     false
+    ],
+    "walk_down": [
+     3,
+     85,
+     false
+    ],
+    "walk_up": [
+     3,
+     85,
+     false
+    ]
+   },
+   "hop": false
+  },
+  "sukuna": {
+   "cell": [
+    133,
+    164
+   ],
+   "anchor": [
+    66,
+    162
+   ],
+   "frames": [
+    6,
+    8,
+    8,
+    6
+   ],
+   "anims": {
+    "idle_down": [
+     0,
+     150,
+     false
+    ],
+    "idle_up": [
+     0,
+     150,
+     false
+    ],
+    "idle_left": [
+     0,
+     150,
+     false
+    ],
+    "idle_right": [
+     0,
+     150,
+     false
+    ],
+    "walk_right": [
+     1,
+     85,
+     false
+    ],
+    "walk_left": [
+     2,
+     85,
+     false
+    ],
+    "walk_down": [
+     3,
+     85,
+     false
+    ],
+    "walk_up": [
+     3,
+     85,
+     false
+    ]
+   },
+   "hop": false
+  },
+  "claude": {
+   "cell": [
+    177,
+    138
+   ],
+   "anchor": [
+    88,
+    136
+   ],
+   "frames": [
+    7,
+    8,
+    8,
+    8
+   ],
+   "anims": {
+    "idle_down": [
+     0,
+     150,
+     false
+    ],
+    "idle_up": [
+     0,
+     150,
+     false
+    ],
+    "idle_left": [
+     0,
+     150,
+     false
+    ],
+    "idle_right": [
+     0,
+     150,
+     false
+    ],
+    "walk_right": [
+     1,
+     85,
+     false
+    ],
+    "walk_left": [
+     2,
+     85,
+     false
+    ],
+    "walk_down": [
+     3,
+     85,
+     false
+    ],
+    "walk_up": [
+     3,
+     85,
+     false
+    ]
+   },
+   "hop": false
+  },
+  "palantir-patrick": {
+   "cell": [
+    136,
+    164
+   ],
+   "anchor": [
+    68,
+    162
+   ],
+   "frames": [
+    6,
+    8,
+    8,
+    6
+   ],
+   "anims": {
+    "idle_down": [
+     0,
+     150,
+     false
+    ],
+    "idle_up": [
+     0,
+     150,
+     false
+    ],
+    "idle_left": [
+     0,
+     150,
+     false
+    ],
+    "idle_right": [
+     0,
+     150,
+     false
+    ],
+    "walk_right": [
+     1,
+     85,
+     false
+    ],
+    "walk_left": [
+     2,
+     85,
+     false
+    ],
+    "walk_down": [
+     3,
+     85,
+     false
+    ],
+    "walk_up": [
+     3,
+     85,
+     false
+    ]
+   },
+   "hop": false
+  },
+  "sam-altman": {
+   "cell": [
+    99,
+    164
+   ],
+   "anchor": [
+    49,
+    162
+   ],
+   "frames": [
+    6,
+    8,
+    8,
+    6
+   ],
+   "anims": {
+    "idle_down": [
+     0,
+     150,
+     false
+    ],
+    "idle_up": [
+     0,
+     150,
+     false
+    ],
+    "idle_left": [
+     0,
+     150,
+     false
+    ],
+    "idle_right": [
+     0,
+     150,
+     false
+    ],
+    "walk_right": [
+     1,
+     85,
+     false
+    ],
+    "walk_left": [
+     2,
+     85,
+     false
+    ],
+    "walk_down": [
+     3,
+     85,
+     false
+    ],
+    "walk_up": [
+     3,
+     85,
+     false
+    ]
+   },
+   "hop": false
+  },
+  "trump": {
+   "cell": [
+    127,
+    164
+   ],
+   "anchor": [
+    63,
+    162
+   ],
+   "frames": [
+    6,
+    8,
+    8,
+    6
+   ],
+   "anims": {
+    "idle_down": [
+     0,
+     150,
+     false
+    ],
+    "idle_up": [
+     0,
+     150,
+     false
+    ],
+    "idle_left": [
+     0,
+     150,
+     false
+    ],
+    "idle_right": [
+     0,
+     150,
+     false
+    ],
+    "walk_right": [
+     1,
+     85,
+     false
+    ],
+    "walk_left": [
+     2,
+     85,
+     false
+    ],
+    "walk_down": [
+     3,
+     85,
+     false
+    ],
+    "walk_up": [
+     3,
+     85,
+     false
+    ]
+   },
+   "hop": false
+  }
+ }
+}

@@ -6,7 +6,7 @@ import pygame
 from common import config, map_data
 from common import protocol as P
 from client import ui
-from client.assets import VIEW_ZOOM, color_of
+from client.assets import CHAR_H_PER_SCALE, VIEW_ZOOM, color_of
 from client.screens.base import CANVAS_H, CANVAS_W, Screen
 
 POS_PERIOD = 1.0 / config.POS_HZ
@@ -46,6 +46,14 @@ class GameScreen(Screen):
         app.net.reset_snapshots()
         if state is not None:
             self.load_state(state)
+        else:                                   # countdown: the roster already says who plays as what
+            self._prewarm([p.get("character") for p in (app.room or {}).get("players", [])])
+
+    def _prewarm(self, chars):
+        """Scale every frame of the characters in this game now, during the countdown,
+        so no frame has to do it while the game is running."""
+        height = CHAR_H_PER_SCALE * self.sprite_scale
+        self.app.assets.chars.prewarm(height, {c for c in chars if c is not None})
 
     # --- state ------------------------------------------------------------------------
     def load_state(self, st):
@@ -61,8 +69,10 @@ class GameScreen(Screen):
         for p in st.get("players", []):
             q = pos.get(p["id"], {"x": 0, "y": 0, "dir": "down"})
             self.players[p["id"]] = {"name": p["name"], "color": p["color"], "status": p["status"],
+                                     "character": p.get("character"),
                                      "x": q["x"], "y": q["y"], "tx": q["x"], "ty": q["y"],
                                      "dir": q.get("dir", "down")}
+        self._prewarm([p["character"] for p in self.players.values()])
         me = self.players.get(self.me_id)
         if me:
             self.mx, self.my, self.mdir = me["x"], me["y"], me["dir"]
@@ -202,7 +212,13 @@ class GameScreen(Screen):
             if pid == self.me_id and self.is_me_playing():
                 p["x"], p["y"], p["dir"] = self.mx, self.my, self.mdir
             else:
-                p["moving"] = math.hypot(p["tx"] - p["x"], p["ty"] - p["y"]) > 1.5
+                # keep walking briefly after the gap closes, so a late snapshot never
+                # flips the animation to idle and back
+                if math.hypot(p["tx"] - p["x"], p["ty"] - p["y"]) > 1.5:
+                    p["still"] = 0.0
+                else:
+                    p["still"] = p.get("still", 1.0) + dt
+                p["moving"] = p["still"] < 0.15
                 p["x"] += (p["tx"] - p["x"]) * k
                 p["y"] += (p["ty"] - p["y"]) * k
 
@@ -318,7 +334,8 @@ class GameScreen(Screen):
             me = pid == self.me_id
             assets.draw_player(surf, sx, sy, p["color"], p["dir"], p["name"], me=me,
                                connected=(p["status"] == P.STATUS_CONNECTED),
-                               moving=self.moving if me else p.get("moving", False), scale=self.sprite_scale)
+                               moving=self.moving if me else p.get("moving", False), scale=self.sprite_scale,
+                               character=p.get("character"))
 
     # --- drawing: HUD -------------------------------------------------------------------
     def _timer_plate(self, surf, cx=CANVAS_W // 2, y=10):

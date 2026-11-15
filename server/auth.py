@@ -89,6 +89,7 @@ class Session:
         self.udp_addr = None          # (ip, port) learned from UDP_HELLO
         self.room = None              # Room the user is in (player or spectator)
         self.disconnected_at = None   # monotonic time of the drop
+        self.character = None         # index into common.characters, None = not chosen yet
 
     @property
     def is_admin(self):

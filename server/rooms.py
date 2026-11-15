@@ -7,7 +7,7 @@ room.lock. When both are needed, server.lock is always taken first.
 import secrets
 import threading
 
-from common import config
+from common import characters, config
 from common import protocol as P
 from server import game
 
@@ -20,6 +20,7 @@ class PlayerState:
         self.id = session.player_id
         self.name = session.username
         self.color = color
+        self.character = session.character if characters.valid(session.character) else color % characters.COUNT
         self.join_index = join_index
         self.status = P.STATUS_CONNECTED      # connected | disconnected | left
         self.score = 0
@@ -83,7 +84,8 @@ class Room:
             host=self.host_id,
             host_name=self.host_name,
             players=[
-                {"id": p.id, "name": p.name, "status": p.status, "color": p.color, "score": p.score}
+                {"id": p.id, "name": p.name, "status": p.status, "color": p.color,
+                 "character": p.character, "score": p.score}
                 for p in self.players.values() if p.status != P.STATUS_LEFT
             ],
             status=self.phase,
@@ -189,6 +191,25 @@ class RoomRegistry:
                     session.send(game.started_message(room))
                 room.broadcast(roster)
 
+    def set_character(self, session, character):
+        """Remember the pick on the session (it carries into every room joined later) and,
+        while a room is waiting, update the roster so everyone sees it at once."""
+        if not characters.valid(character):
+            session.send(P.error(P.E_INVALID, f"character must be 0-{characters.COUNT - 1}"))
+            return
+        with self.server.lock:
+            session.character = character
+            room = session.room
+            if room is None:
+                return
+            with room.lock:
+                p = room.players.get(session.player_id)
+                if p is None or room.phase != P.PHASE_WAITING:
+                    return                     # spectator, or mid-game: the pick applies next time
+                if p.character != character:
+                    p.character = character
+                    room.broadcast(room.roster())
+
     def leave_room(self, session, reason="left"):
         """LEAVE_ROOM, LOGOUT, or a drop while the room is waiting."""
         with self.server.lock:
@@ -240,6 +261,8 @@ class RoomRegistry:
                 if room.closed:
                     return
                 for pid, p in list(room.players.items()):
+                    if characters.valid(p.session.character):
+                        p.character = p.session.character      # a pick made mid-game applies now
                     if not p.connected:
                         del room.players[pid]
                         if p.session.room is room:

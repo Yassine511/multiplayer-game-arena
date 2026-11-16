@@ -1,13 +1,13 @@
 """Single entry point: this is what the one-file executable runs.
 
-    arena                         launcher window: HOST ON THIS PC, or JOIN a server by IP
-    arena --server 192.168.1.20   straight to that server's login
-    arena server [--public-host X]   headless server only (no window), logs to the terminal
+    ultimate-slop-showdown                         launcher window: HOST ON THIS PC, or JOIN a server by IP
+    ultimate-slop-showdown --server 192.168.1.20   straight to that server's login
+    ultimate-slop-showdown server [--public-host X]   headless server only (no window), logs to the terminal
 
 From source the same works with `python arena.py ...`.
 
 The Windows build is a windowed app (no black console flashing up behind the game).
-Its log lines go to arena_data/arena.log next to the exe; `arena server` started from
+Its log lines go to arena_data/arena.log next to the exe; `ultimate-slop-showdown server` started from
 a terminal attaches to that terminal (or opens a console) so the headless server
 still prints its log.
 """
@@ -26,7 +26,7 @@ def _log_file():
 
 
 def _console_for_server():
-    """Windowed exe started as `arena server`: write to the terminal it came from, or a new one."""
+    """Windowed exe started as `... server`: write to the terminal it came from, or a new one."""
     if sys.platform != "win32":
         return False
     import ctypes

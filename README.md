@@ -14,13 +14,13 @@ and the game.
 
 | OS | File |
 |---|---|
-| Windows 10/11 x64 | `dist/arena.exe` |
-| Ubuntu 24.04 / 26.04 x64 (needs glibc 2.38+) | `dist/arena-linux` |
+| Windows 10/11 x64 | `dist/ultimate-slop-showdown.exe` |
+| Ubuntu 24.04 / 26.04 x64 (needs glibc 2.38+) | `dist/ultimate-slop-showdown-linux` |
 
 On Linux, make it executable once (copying through Windows drops the bit):
 
 ```bash
-chmod +x arena-linux
+chmod +x ultimate-slop-showdown-linux
 ```
 
 1. **The PC that runs the server:** start the file and click **HOST ON THIS PC**.
@@ -31,8 +31,8 @@ chmod +x arena-linux
 3. Register or log in. In the lobby, **CREATE ROOM** makes you the host
    (spectator); the others **JOIN** with the 6-digit code or the room list.
 
-Skip the launcher with `arena --server 192.168.1.20`. Run a headless server
-(no window) with `arena server` (`--public-host X` is accepted as before).
+Skip the launcher with `ultimate-slop-showdown --server 192.168.1.20`. Run a headless server
+(no window) with `ultimate-slop-showdown server` (`--public-host X` is accepted as before).
 When frozen, accounts are stored in `arena_data/users.json` next to the
 executable.
 
@@ -268,7 +268,7 @@ pip install -r requirements.txt pyinstaller
 python -m PyInstaller arena.spec --noconfirm --clean
 ```
 
-This writes `dist/arena.exe`.
+This writes `dist/ultimate-slop-showdown.exe`.
 
 **Ubuntu** (or WSL Ubuntu), in `arena/`:
 
@@ -277,14 +277,14 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt pyinstaller
 .venv/bin/python -m PyInstaller arena.spec --noconfirm --clean
 ```
 
-This writes `dist/arena`. If `venv` complains about `ensurepip`, run
+This writes `dist/ultimate-slop-showdown`; rename it to `ultimate-slop-showdown-linux`. If `venv` complains about `ensurepip`, run
 `sudo apt install python3-venv` first. The Linux binary runs on systems whose
 glibc is at least as new as the build machine's, so build on the oldest Ubuntu
 you need to support.
 
 ## Demo script
 
-1. On PC 1, start `arena.exe` and click **HOST ON THIS PC**. Note the IP on the login screen.
+1. On PC 1, start `ultimate-slop-showdown.exe` and click **HOST ON THIS PC**. Note the IP on the login screen.
 2. On PCs 2-4, start the file, type that IP and click **CONNECT**. Register one new player and log in the others.
 3. PC 1 logs in, clicks **CREATE ROOM** and is the host-spectator. The 6-digit code and QR appear.
 4. The host drags `sample_questions.csv` onto the window, writes one more question, and maybe adds the built-in set.

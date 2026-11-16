@@ -1,7 +1,8 @@
 # PyInstaller recipe for the single-file game (server + client in one executable).
 #
 #   pip install pyinstaller
-#   pyinstaller arena.spec            -> dist/arena.exe (Windows) or dist/arena (Linux)
+#   pyinstaller arena.spec            -> dist/ultimate-slop-showdown.exe (Windows) or dist/ultimate-slop-showdown (Linux,
+#                                        shipped as dist/ultimate-slop-showdown-linux)
 #
 # PyInstaller cannot cross-compile: build the Windows exe on Windows and the Linux
 # binary on Linux (WSL Ubuntu works). See build.py.
@@ -33,7 +34,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name="arena",
+    name="ultimate-slop-showdown",
     debug=False,
     strip=False,
     upx=False,

@@ -10,7 +10,7 @@ server/data/users.json
 build/
 dist/*
 # ...except the ready-to-run game (rebuild with pyinstaller before committing)
-!dist/arena.exe
-!dist/arena-linux
+!dist/ultimate-slop-showdown.exe
+!dist/ultimate-slop-showdown-linux
 !dist/sample_questions.csv
 arena_data/

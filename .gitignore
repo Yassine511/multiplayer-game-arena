@@ -8,5 +8,9 @@ server/data/users.json
 
 # PyInstaller output
 build/
-dist/
+dist/*
+# ...except the ready-to-run game (rebuild with pyinstaller before committing)
+!dist/arena.exe
+!dist/arena-linux
+!dist/sample_questions.csv
 arena_data/
